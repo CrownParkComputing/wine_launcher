@@ -1,3 +1,5 @@
+import 'package:uuid/uuid.dart';
+
 class Game {
   final String id;
   final String name;
@@ -14,14 +16,14 @@ class Game {
   Game({
     String? id,
     required this.name,
-    required this.category,
+    this.category = '',
     required this.exePath,
     this.prefixPath,
     this.isProton,
     this.coverImagePath,
     required this.environment,
     required this.launchOptions,
-  }) : id = id ?? DateTime.now().millisecondsSinceEpoch.toString();
+  }) : id = id ?? const Uuid().v4();
 
   Game copyWith({
     String? name,
@@ -41,32 +43,41 @@ class Game {
       prefixPath: prefixPath ?? this.prefixPath,
       isProton: isProton ?? this.isProton,
       coverImagePath: coverImagePath ?? this.coverImagePath,
-      environment: environment ?? this.environment,
-      launchOptions: launchOptions ?? this.launchOptions,
+      environment: environment ?? Map.from(this.environment),
+      launchOptions: launchOptions ?? Map.from(this.launchOptions),
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'category': category,
-    'exePath': exePath,
-    'prefixPath': prefixPath,
-    'isProton': isProton,
-    'coverImagePath': coverImagePath,
-    'environment': environment,
-    'launchOptions': launchOptions,
-  };
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'category': category,
+      'exePath': exePath,
+      'prefixPath': prefixPath,
+      'isProton': isProton,
+      'coverImagePath': coverImagePath,
+      'environment': environment,
+      'launchOptions': launchOptions,
+    };
+  }
 
-  factory Game.fromJson(Map<String, dynamic> json) => Game(
-    id: json['id'] as String,
-    name: json['name'] as String,
-    category: json['category'] as String,
-    exePath: json['exePath'] as String,
-    prefixPath: json['prefixPath'] as String?,
-    isProton: json['isProton'] as bool?,
-    coverImagePath: json['coverImagePath'] as String?,
-    environment: Map<String, String>.from(json['environment'] as Map),
-    launchOptions: Map<String, String>.from(json['launchOptions'] as Map),
-  );
+  factory Game.fromJson(Map<String, dynamic> json) {
+    return Game(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      category: json['category'] as String? ?? '',
+      exePath: json['exePath'] as String,
+      prefixPath: json['prefixPath'] as String?,
+      isProton: json['isProton'] as bool?,
+      coverImagePath: json['coverImagePath'] as String?,
+      environment: Map<String, String>.from(json['environment'] as Map),
+      launchOptions: Map<String, String>.from(json['launchOptions'] as Map),
+    );
+  }
+
+  @override
+  String toString() {
+    return 'Game(id: $id, name: $name, category: $category)';
+  }
 } 

@@ -416,11 +416,18 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
           );
         }
 
-        // Group games by category
+        // Group games by category with better Uncategorized handling
         final gamesByCategory = <String, List<Game>>{};
+        // First add all categorized games
         for (final game in games) {
-          final category = game.category.isEmpty ? 'Uncategorized' : game.category;
-          gamesByCategory.putIfAbsent(category, () => []).add(game);
+          if (game.category.isNotEmpty) {
+            gamesByCategory.putIfAbsent(game.category, () => []).add(game);
+          }
+        }
+        // Then add uncategorized games at the end
+        final uncategorizedGames = games.where((game) => game.category.isEmpty).toList();
+        if (uncategorizedGames.isNotEmpty) {
+          gamesByCategory['Uncategorized'] = uncategorizedGames;
         }
 
         return Scaffold(
@@ -443,8 +450,9 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
                 final categoryGames = entry.value;
 
                 return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
                   child: ExpansionTile(
-                    initiallyExpanded: _expandedCategories[category] ?? false,
+                    initiallyExpanded: _expandedCategories[category] ?? true,
                     onExpansionChanged: (expanded) {
                       setState(() {
                         _expandedCategories[category] = expanded;
@@ -452,9 +460,13 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
                     },
                     title: Text(
                       category,
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     children: categoryGames.map((game) {
+                      final isUncategorized = category == 'Uncategorized';
+                      
                       return ListTile(
                         leading: game.coverImagePath != null
                             ? Image.file(
@@ -492,11 +504,11 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
                                 },
                               )
                             : const Text(
-                                'No prefix selected',
+                                'Configure prefix in Settings',
                                 style: TextStyle(color: Colors.orange),
                               ),
                         trailing: SizedBox(
-                          width: 250, // Increased width for buttons
+                          width: 250,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -504,26 +516,37 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
                                 icon: const Icon(Icons.folder),
                                 onPressed: () => _openGameFolder(game),
                                 tooltip: 'Open Game Folder',
+                                style: IconButton.styleFrom(
+                                  foregroundColor: isUncategorized ? Colors.white : null,
+                                ),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.edit),
                                 onPressed: () => _editGame(game),
                                 tooltip: 'Edit Game',
+                                style: IconButton.styleFrom(
+                                  foregroundColor: isUncategorized ? Colors.white : null,
+                                ),
                               ),
                               IconButton(
                                 icon: const Icon(Icons.delete),
                                 onPressed: () => _deleteGame(game),
                                 tooltip: 'Delete Game',
+                                style: IconButton.styleFrom(
+                                  foregroundColor: isUncategorized ? Colors.white : null,
+                                ),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: ElevatedButton.icon(
                                   icon: const Icon(Icons.play_arrow, size: 20),
-                                  label: Text(
-                                    game.hasPrefix ? 'Play' : 'Select Prefix',
-                                    style: const TextStyle(fontSize: 13),
+                                  label: const Text('Play', style: TextStyle(fontSize: 13)),
+                                  onPressed: game.hasPrefix ? () => _launchGame(game) : null,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: isUncategorized ? Colors.grey.shade800 : null,
+                                    disabledBackgroundColor: isUncategorized ? Colors.grey.shade900 : Colors.grey.shade300,
+                                    foregroundColor: isUncategorized ? Colors.white : null,
                                   ),
-                                  onPressed: () => _launchGame(game),
                                 ),
                               ),
                             ],

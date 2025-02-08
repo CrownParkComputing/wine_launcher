@@ -413,6 +413,16 @@ class GameProvider extends ChangeNotifier {
   final List<Game> _games = [];
   List<Game> get games => List.unmodifiable(_games);
   
+  // Add a method to get games by category
+  Map<String, List<Game>> get gamesByCategory {
+    final map = <String, List<Game>>{};
+    for (final game in _games) {
+      final category = game.category.isEmpty ? 'Uncategorized' : game.category;
+      map.putIfAbsent(category, () => []).add(game);
+    }
+    return map;
+  }
+
   Future<void> scanGamesFolder(BuildContext context) async {
     final settings = Provider.of<SettingsProvider>(context, listen: false);
     final gamesPath = settings.gamesPath;
@@ -428,13 +438,13 @@ class GameProvider extends ChangeNotifier {
         await dir.create(recursive: true);
       }
 
-      // Store existing games by ID to preserve their data
+      // Store existing games by name to preserve their data
       final existingGames = {
         for (var game in _games)
-          game.id: game
+          game.name: game
       };
 
-      _games.clear();
+      final newGames = <Game>[];
 
       // Scan for game folders
       await for (final entity in dir.list()) {
@@ -442,36 +452,68 @@ class GameProvider extends ChangeNotifier {
           final gameName = p.basename(entity.path);
           final configFile = File(p.join(entity.path, 'game.json'));
 
+          Game? game;
           if (await configFile.exists()) {
             try {
-              // Load existing game config
               final json = jsonDecode(await configFile.readAsString());
-              final game = Game.fromJson(json);
+              game = Game.fromJson(json);
               
-              // Preserve existing game data if available
-              if (existingGames.containsKey(game.id)) {
-                _games.add(existingGames[game.id]!);
-              } else {
-                _games.add(game);
+              // Preserve existing category if it exists
+              if (existingGames.containsKey(gameName)) {
+                final existingGame = existingGames[gameName]!;
+                if (existingGame.category.isNotEmpty) {
+                  game = game.copyWith(category: existingGame.category);
+                }
               }
             } catch (e) {
               LoggingService().log(
-                'Error loading game config: $e',
+                'Error loading game config for $gameName: $e',
                 level: LogLevel.error,
               );
             }
-          } else {
-            // Add new game entry
-            _games.add(Game(
-              name: gameName,
-              category: 'Uncategorized',
-              exePath: '',
-              environment: const {},
-              launchOptions: const {},
-            ));
           }
+
+          // If we have an existing game with this name, use its data
+          if (existingGames.containsKey(gameName)) {
+            final existingGame = existingGames[gameName]!;
+            // If we loaded new data, merge it with existing data
+            if (game != null) {
+              game = game.copyWith(
+                category: existingGame.category.isNotEmpty 
+                  ? existingGame.category 
+                  : game.category,
+                prefixPath: existingGame.prefixPath,
+                isProton: existingGame.isProton,
+                environment: existingGame.environment,
+                launchOptions: existingGame.launchOptions,
+              );
+            } else {
+              game = existingGame;
+            }
+          }
+
+          // If we still don't have a game, create a new one
+          game ??= Game(
+            name: gameName,
+            category: 'Uncategorized',
+            exePath: '',
+            environment: const {},
+            launchOptions: const {},
+          );
+
+          newGames.add(game);
         }
       }
+
+      // Update games list
+      _games.clear();
+      _games.addAll(newGames);
+
+      LoggingService().log(
+        'Scanned ${_games.length} games\n'
+        'Categories: ${_games.map((g) => '${g.name}: ${g.category}').join('\n')}',
+        level: LogLevel.debug,
+      );
 
       notifyListeners();
       await saveGames();
@@ -485,16 +527,20 @@ class GameProvider extends ChangeNotifier {
   }
 
   Future<void> updateGame(Game game) async {
-    final index = _games.indexWhere((g) => g.id == game.id);
+    final index = _games.indexWhere((g) => g.name == game.name);
     if (index != -1) {
+      final oldGame = _games[index];
       _games[index] = game;
-      await saveGames();
       
       LoggingService().log(
-        'Updated game: ${game.name} (Category: ${game.category})',
-        level: LogLevel.info,
+        'Updating game: ${game.name}\n'
+        'Old category: ${oldGame.category}\n'
+        'New category: ${game.category}\n'
+        'Game data: ${game.toJson()}',
+        level: LogLevel.debug,
       );
       
+      await saveGames();
       notifyListeners();
     } else {
       LoggingService().log(
@@ -518,7 +564,6 @@ class GameProvider extends ChangeNotifier {
       final settings = Provider.of<SettingsProvider>(context, listen: false);
       final gamesPath = settings.gamesPath;
 
-      // Save each game to its own directory
       for (final game in _games) {
         final gameDir = Directory(p.join(gamesPath, game.name));
         if (!await gameDir.exists()) {
@@ -526,15 +571,19 @@ class GameProvider extends ChangeNotifier {
         }
 
         final configFile = File(p.join(gameDir.path, 'game.json'));
+        final json = game.toJson();
+        
+        LoggingService().log(
+          'Saving game: ${game.name}\n'
+          'Category: ${game.category}\n'
+          'JSON: $json',
+          level: LogLevel.debug,
+        );
+        
         await configFile.writeAsString(
-          const JsonEncoder.withIndent('  ').convert(game.toJson()),
+          const JsonEncoder.withIndent('  ').convert(json),
         );
       }
-
-      LoggingService().log(
-        'Saved ${_games.length} games to $gamesPath',
-        level: LogLevel.info,
-      );
     } catch (e) {
       LoggingService().log(
         'Error saving games: $e',
@@ -544,14 +593,22 @@ class GameProvider extends ChangeNotifier {
   }
 
   Future<void> addGame(Game game) async {
-    // Check if game with same ID already exists
-    final existingIndex = _games.indexWhere((g) => g.id == game.id);
+    // Check if game with same name already exists
+    final existingIndex = _games.indexWhere((g) => g.name == game.name);
     if (existingIndex != -1) {
       // Update existing game
       _games[existingIndex] = game;
+      LoggingService().log(
+        'Updated existing game: ${game.name} (Category: ${game.category})',
+        level: LogLevel.debug,
+      );
     } else {
       // Add new game
       _games.add(game);
+      LoggingService().log(
+        'Added new game: ${game.name} (Category: ${game.category})',
+        level: LogLevel.debug,
+      );
     }
     
     await saveGames();
