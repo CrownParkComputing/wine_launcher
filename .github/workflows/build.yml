@@ -23,16 +23,16 @@ jobs:
       image: ${{ matrix.distro }}
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       
       - name: Install dependencies
         run: |
           if [ "${{ matrix.distro }}" = "ubuntu-latest" ]; then
-            apt-get update && apt-get install -y curl git cmake ninja-build clang pkg-config libgtk-3-dev
+            apt-get update && apt-get install -y curl git cmake ninja-build clang pkg-config libgtk-3-dev dpkg-dev
           elif [ "${{ matrix.distro }}" = "fedora-latest" ]; then
-            dnf install -y curl git cmake ninja-build clang pkg-config gtk3-devel
+            dnf install -y curl git cmake ninja-build clang pkg-config gtk3-devel rpm-build
           else
-            pacman -Syu --noconfirm curl git cmake ninja clang pkg-config gtk3
+            pacman -Syu --noconfirm curl git cmake ninja clang pkg-config gtk3 base-devel
           fi
 
       - name: Setup Flutter
@@ -48,24 +48,111 @@ jobs:
 
       - name: Package Application
         run: |
+          VERSION=$(grep 'version:' pubspec.yaml | cut -d' ' -f2)
           if [ "${{ matrix.package }}" = "deb" ]; then
             # Create DEB package
             mkdir -p debian/DEBIAN
-            mkdir -p debian/usr/bin
+            mkdir -p debian/usr/bin/wine-launcher
             mkdir -p debian/usr/share/applications
-            cp -r build/linux/x64/release/bundle/* debian/usr/bin/
-            # Create desktop file and control file
-            # Package using dpkg-deb
+            
+            # Copy application files
+            cp -r build/linux/x64/release/bundle/* debian/usr/bin/wine-launcher/
+            
+            # Create desktop entry
+            cat > debian/usr/share/applications/wine-launcher.desktop << EOF
+            [Desktop Entry]
+            Name=Wine Launcher
+            Exec=/usr/bin/wine-launcher/wine_launcher
+            Icon=/usr/bin/wine-launcher/data/flutter_assets/assets/icon.png
+            Type=Application
+            Categories=Game;Utility;
+            EOF
+            
+            # Create control file
+            cat > debian/DEBIAN/control << EOF
+            Package: wine-launcher
+            Version: ${VERSION}
+            Section: games
+            Priority: optional
+            Architecture: amd64
+            Depends: wine, winetricks
+            Maintainer: Your Name <your.email@example.com>
+            Description: Wine and Proton prefix manager for Linux
+             A modern GUI application to manage Wine and Proton prefixes,
+             launch Windows games and applications.
+            EOF
+            
+            # Build package
+            dpkg-deb --build debian wine-launcher_${VERSION}_amd64.deb
+            
           elif [ "${{ matrix.package }}" = "rpm" ]; then
-            # Create RPM package using rpmbuild
-            # Setup spec file and build
+            # Create RPM spec file
+            cat > wine-launcher.spec << EOF
+            Name: wine-launcher
+            Version: ${VERSION}
+            Release: 1
+            Summary: Wine and Proton prefix manager for Linux
+            License: MIT
+            Requires: wine winetricks
+            
+            %description
+            A modern GUI application to manage Wine and Proton prefixes,
+            launch Windows games and applications.
+            
+            %install
+            mkdir -p %{buildroot}/usr/bin/wine-launcher
+            mkdir -p %{buildroot}/usr/share/applications
+            cp -r build/linux/x64/release/bundle/* %{buildroot}/usr/bin/wine-launcher/
+            
+            cat > %{buildroot}/usr/share/applications/wine-launcher.desktop << EOL
+            [Desktop Entry]
+            Name=Wine Launcher
+            Exec=/usr/bin/wine-launcher/wine_launcher
+            Icon=/usr/bin/wine-launcher/data/flutter_assets/assets/icon.png
+            Type=Application
+            Categories=Game;Utility;
+            EOL
+            
+            %files
+            /usr/bin/wine-launcher
+            /usr/share/applications/wine-launcher.desktop
+            EOF
+            
+            # Build RPM
+            rpmbuild -bb wine-launcher.spec
+            
           else
-            # Create Arch package using makepkg
-            # Setup PKGBUILD and build
+            # Create PKGBUILD
+            cat > PKGBUILD << EOF
+            pkgname=wine-launcher
+            pkgver=${VERSION}
+            pkgrel=1
+            pkgdesc="Wine and Proton prefix manager for Linux"
+            arch=('x86_64')
+            depends=('wine' 'winetricks')
+            
+            package() {
+              mkdir -p "\${pkgdir}/usr/bin/wine-launcher"
+              mkdir -p "\${pkgdir}/usr/share/applications"
+              cp -r build/linux/x64/release/bundle/* "\${pkgdir}/usr/bin/wine-launcher/"
+              
+              cat > "\${pkgdir}/usr/share/applications/wine-launcher.desktop" << EOL
+            [Desktop Entry]
+            Name=Wine Launcher
+            Exec=/usr/bin/wine-launcher/wine_launcher
+            Icon=/usr/bin/wine-launcher/data/flutter_assets/assets/icon.png
+            Type=Application
+            Categories=Game;Utility;
+            EOL
+            }
+            EOF
+            
+            # Build package
+            makepkg -si --noconfirm
           fi
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wine-launcher-${{ matrix.package }}
           path: |
@@ -79,7 +166,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
