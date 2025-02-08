@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build RPM Package
 
 on:
   push:
@@ -7,258 +7,147 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-linux:
+  build-rpm:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - distro: ubuntu:22.04
-            package: deb
-          - distro: fedora:39
-            package: rpm
-          - distro: archlinux:base-devel
-            package: pkg.tar.zst
-
-    container:
-      image: ${{ matrix.distro }}
-
+    container: 
+      image: fedora:39
+    
     steps:
       - uses: actions/checkout@v4
       
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
-          if [ "${{ matrix.distro }}" = "ubuntu:22.04" ]; then
-            apt-get update
-            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              curl git cmake ninja-build clang pkg-config libgtk-3-dev dpkg-dev \
-              xz-utils jq unzip zip wget ca-certificates \
-              libglu1-mesa fonts-droid-fallback python3
-          elif [ "${{ matrix.distro }}" = "fedora:39" ]; then
-            # First install minimal required packages
-            dnf clean all
-            dnf makecache
-            dnf install -y --setopt=install_weak_deps=False \
-              curl git jq unzip zip findutils which xz wget ca-certificates \
-              mesa-libGLU python3
+          dnf clean all
+          dnf -y update
+          dnf install -y \
+            curl \
+            git \
+            cmake \
+            ninja-build \
+            clang \
+            pkg-config \
+            gtk3-devel \
+            rpm-build \
+            xz \
+            wget \
+            unzip \
+            which \
+            mesa-libGLU \
+            findutils
 
-            # Then install development packages one by one
-            dnf install -y --setopt=install_weak_deps=False cmake
-            dnf install -y --setopt=install_weak_deps=False ninja-build
-            dnf install -y --setopt=install_weak_deps=False clang
-            dnf install -y --setopt=install_weak_deps=False pkg-config
-            dnf install -y --setopt=install_weak_deps=False gtk3-devel
-            dnf install -y --setopt=install_weak_deps=False rpm-build
-          else
-            pacman -Syu --noconfirm
-            pacman -S --noconfirm --needed \
-              curl git cmake ninja clang pkg-config gtk3 base-devel xz jq unzip zip \
-              wget ca-certificates mesa python
-
-      - name: Download Flutter SDK
+      - name: Setup Flutter
         run: |
-          # Download and extract Flutter
-          wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.27.4-stable.tar.xz
-          tar xf flutter_linux_3.27.4-stable.tar.xz
-          
-          # Fix Git ownership issues
           git config --global --add safe.directory '*'
-          git config --global --add safe.directory /__t/flutter/stable-3.27.4-x64
-          git config --global --add safe.directory $(pwd)/flutter
+          git config --global --add safe.directory $GITHUB_WORKSPACE
           
-          # Set up Flutter environment
-          export FLUTTER_ROOT=$(pwd)/flutter
-          export PATH="$FLUTTER_ROOT/bin:$PATH"
+          wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.16.9-stable.tar.xz
+          tar xf flutter_linux_3.16.9-stable.tar.xz
           
-          # Force Flutter to recognize the correct version
-          cd flutter
-          git checkout stable
-          cd ..
-          
-          # Create version file
-          mkdir -p flutter/bin/cache
-          echo '3.27.4' > flutter/bin/cache/flutter.version
-          echo '3.27.4' > flutter/version
-          
-          # Configure Flutter
+          export PATH="$PATH:$PWD/flutter/bin"
           flutter config --no-analytics
           flutter config --enable-linux-desktop
-          flutter config --no-enable-android
-          flutter config --no-enable-ios
-          flutter config --no-enable-web
-          
-          # Print debug information
-          echo "Flutter root: $FLUTTER_ROOT"
-          flutter --version
-          git status
-          
-          # Verify setup (continue on error)
-          flutter doctor -v || true
+          flutter doctor -v
 
-      - name: Install Flutter dependencies
+      - name: Build Application
         run: |
-          export FLUTTER_ROOT=$(pwd)/flutter
-          export PATH="$FLUTTER_ROOT/bin:$PATH"
-          
-          # Force pub get to use the correct version
-          cd $GITHUB_WORKSPACE
-          rm -f .dart_tool/version
-          flutter pub get --no-example
-        
-      - name: Build Linux
-        run: |
-          export FLUTTER_ROOT=$(pwd)/flutter
-          export PATH="$FLUTTER_ROOT/bin:$PATH"
-          
-          cd $GITHUB_WORKSPACE
+          export PATH="$PATH:$PWD/flutter/bin"
+          flutter pub get
           flutter build linux --release
 
-      - name: Package Application
+      - name: Create RPM Package
         run: |
           VERSION=$(grep 'version:' pubspec.yaml | cut -d' ' -f2)
-          if [ "${{ matrix.package }}" = "deb" ]; then
-            # Create DEB package structure
-            mkdir -p debian/DEBIAN
-            mkdir -p debian/usr/bin
-            mkdir -p debian/usr/share/applications
-            mkdir -p debian/usr/share/icons/hicolor/128x128/apps
+          
+          # Setup RPM build environment
+          mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          
+          # Create source tarball
+          cd build/linux/x64/release/bundle
+          tar czf ~/rpmbuild/SOURCES/wine-launcher-$VERSION.tar.gz *
+          cd -
+          
+          # Copy assets
+          cp assets/wine-launcher.desktop ~/rpmbuild/SOURCES/
+          cp assets/wine-launcher.png ~/rpmbuild/SOURCES/
+          
+          # Create spec file
+          cat > ~/rpmbuild/SPECS/wine-launcher.spec << EOF
+          Name:           wine-launcher
+          Version:        $VERSION
+          Release:        1%{?dist}
+          Summary:        A Wine and Proton prefix manager for Linux
+          
+          License:        MIT
+          URL:            https://github.com/yourusername/wine-launcher
+          BuildArch:      x86_64
+          
+          Source0:        %{name}-%{version}.tar.gz
+          Source1:        %{name}.desktop
+          Source2:        %{name}.png
+          
+          Requires:       wine
+          Requires:       winetricks
+          Requires:       gtk3
+          
+          %description
+          A Flutter-based game launcher for Wine and Proton with support for managing
+          multiple Wine prefixes and game configurations.
+          
+          %prep
+          %setup -q -c
+          
+          %install
+          mkdir -p %{buildroot}%{_bindir}
+          mkdir -p %{buildroot}%{_libdir}/%{name}
+          mkdir -p %{buildroot}%{_datadir}/applications
+          mkdir -p %{buildroot}%{_datadir}/icons/hicolor/128x128/apps
+          
+          cp -r * %{buildroot}%{_libdir}/%{name}/
+          
+          echo '#!/bin/bash' > %{buildroot}%{_bindir}/%{name}
+          echo 'exec %{_libdir}/%{name}/wine-launcher "\$@"' >> %{buildroot}%{_bindir}/%{name}
+          chmod 755 %{buildroot}%{_bindir}/%{name}
+          
+          install -D -m 644 %{SOURCE1} %{buildroot}%{_datadir}/applications/%{name}.desktop
+          install -D -m 644 %{SOURCE2} %{buildroot}%{_datadir}/icons/hicolor/128x128/apps/%{name}.png
+          
+          %files
+          %{_bindir}/%{name}
+          %{_libdir}/%{name}
+          %{_datadir}/applications/%{name}.desktop
+          %{_datadir}/icons/hicolor/128x128/apps/%{name}.png
+          
+          %changelog
+          * $(date '+%a %b %d %Y') Builder <builder@localhost> - %{version}-%{release}
+          - Initial package release
+          EOF
+          
+          # Build RPM
+          rpmbuild -bb ~/rpmbuild/SPECS/wine-launcher.spec
 
-            # Copy application files
-            cp -r build/linux/x64/release/bundle/* debian/usr/bin/
-            
-            # Create desktop entry
-            cat > debian/usr/share/applications/wine-launcher.desktop << EOF
-            [Desktop Entry]
-            Name=Wine Launcher
-            Comment=Wine and Proton prefix manager
-            Exec=/usr/bin/wine_launcher
-            Icon=wine-launcher
-            Type=Application
-            Categories=Game;Utility;
-            EOF
-            
-            # Create control file
-            cat > debian/DEBIAN/control << EOF
-            Package: wine-launcher
-            Version: ${VERSION}
-            Section: games
-            Priority: optional
-            Architecture: amd64
-            Depends: wine (>= 5.0), winetricks
-            Maintainer: CrownParkComputing
-            Description: Wine and Proton prefix manager for Linux
-             A modern GUI application to manage Wine and Proton prefixes,
-             launch Windows games and applications.
-            EOF
-            
-            # Build package
-            dpkg-deb --build debian wine-launcher_${VERSION}_amd64.deb
-            
-          elif [ "${{ matrix.package }}" = "rpm" ]; then
-            # Create RPM build structure
-            mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-            
-            # Create spec file
-            cat > ~/rpmbuild/SPECS/wine-launcher.spec << EOF
-            Name: wine-launcher
-            Version: ${VERSION}
-            Release: 1%{?dist}
-            Summary: Wine and Proton prefix manager for Linux
-            License: MIT
-            
-            Requires: wine >= 5.0
-            Requires: winetricks
-            
-            %description
-            A modern GUI application to manage Wine and Proton prefixes,
-            launch Windows games and applications.
-            
-            %install
-            mkdir -p %{buildroot}/usr/bin
-            mkdir -p %{buildroot}/usr/share/applications
-            mkdir -p %{buildroot}/usr/share/icons/hicolor/128x128/apps
-            cp -r %{_sourcedir}/bundle/* %{buildroot}/usr/bin/
-            cp %{_sourcedir}/wine-launcher.desktop %{buildroot}/usr/share/applications/
-            
-            %files
-            /usr/bin/*
-            /usr/share/applications/wine-launcher.desktop
-            EOF
-            
-            # Copy build files
-            mkdir -p ~/rpmbuild/SOURCES/bundle
-            cp -r build/linux/x64/release/bundle/* ~/rpmbuild/SOURCES/bundle/
-            
-            # Create desktop entry
-            cat > ~/rpmbuild/SOURCES/wine-launcher.desktop << EOF
-            [Desktop Entry]
-            Name=Wine Launcher
-            Comment=Wine and Proton prefix manager
-            Exec=/usr/bin/wine_launcher
-            Icon=wine-launcher
-            Type=Application
-            Categories=Game;Utility;
-            EOF
-            
-            # Build RPM
-            rpmbuild -bb ~/rpmbuild/SPECS/wine-launcher.spec
-            cp ~/rpmbuild/RPMS/x86_64/wine-launcher-*.rpm ./
-            
-          else
-            # Create Arch package
-            mkdir -p pkg/usr/bin
-            mkdir -p pkg/usr/share/applications
-            mkdir -p pkg/usr/share/icons/hicolor/128x128/apps
-            
-            # Copy application files
-            cp -r build/linux/x64/release/bundle/* pkg/usr/bin/
-            
-            # Create PKGBUILD
-            cat > PKGBUILD << EOF
-            pkgname=wine-launcher
-            pkgver=${VERSION}
-            pkgrel=1
-            pkgdesc="Wine and Proton prefix manager for Linux"
-            arch=('x86_64')
-            url="https://github.com/CrownParkComputing/wine_launcher"
-            license=('MIT')
-            depends=('wine>=5.0' 'winetricks')
-            
-            package() {
-              cp -r pkg/* "\$pkgdir/"
-            }
-            EOF
-            
-            # Build package
-            makepkg -p PKGBUILD
-          fi
-
-      - name: Upload artifacts
+      - name: Upload RPM
         uses: actions/upload-artifact@v4
         with:
-          name: wine-launcher-${{ matrix.package }}
-          path: |
-            *.deb
-            *.rpm
-            *.pkg.tar.zst
+          name: wine-launcher-rpm
+          path: ~/rpmbuild/RPMS/x86_64/wine-launcher-*.rpm
 
   create-release:
-    needs: build-linux
+    needs: build-rpm
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     
     steps:
-      - name: Download artifacts
+      - name: Download RPM artifact
         uses: actions/download-artifact@v4
-        
+        with:
+          name: wine-launcher-rpm
+          
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            wine-launcher-deb/*.deb
-            wine-launcher-rpm/*.rpm
-            wine-launcher-pkg.tar.zst/*.pkg.tar.zst
+          files: wine-launcher-*.rpm
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
