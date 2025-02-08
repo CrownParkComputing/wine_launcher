@@ -56,42 +56,60 @@ jobs:
 
       - name: Download Flutter SDK
         run: |
-          wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.19.2-stable.tar.xz
-          tar xf flutter_linux_3.19.2-stable.tar.xz
+          # Download and extract Flutter
+          wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.27.4-stable.tar.xz
+          tar xf flutter_linux_3.27.4-stable.tar.xz
           
-          # Fix Git ownership issue
-          git config --global --add safe.directory $(pwd)/flutter
+          # Fix Git ownership issues
           git config --global --add safe.directory '*'
+          git config --global --add safe.directory /__t/flutter/stable-3.27.4-x64
+          git config --global --add safe.directory $(pwd)/flutter
           
-          # Set Flutter path and version
-          export PATH="$PATH:$(pwd)/flutter/bin"
-          flutter --version
-          flutter channel stable
-          flutter upgrade
+          # Set up Flutter environment
+          export FLUTTER_ROOT=$(pwd)/flutter
+          export PATH="$FLUTTER_ROOT/bin:$PATH"
+          
+          # Force Flutter to recognize the correct version
+          cd flutter
+          git checkout stable
+          cd ..
+          
+          # Create version file
+          mkdir -p flutter/bin/cache
+          echo '3.27.4' > flutter/bin/cache/flutter.version
+          echo '3.27.4' > flutter/version
           
           # Configure Flutter
           flutter config --no-analytics
-          flutter config --no-android-analytics
           flutter config --enable-linux-desktop
           flutter config --no-enable-android
           flutter config --no-enable-ios
           flutter config --no-enable-web
           
-          # Verify setup
-          flutter doctor -v || true  # Continue even if some checks fail
+          # Print debug information
+          echo "Flutter root: $FLUTTER_ROOT"
+          flutter --version
+          git status
           
-          # Create version file to ensure correct version detection
-          mkdir -p flutter/bin/cache
-          echo '3.19.2' > flutter/bin/cache/flutter.version
+          # Verify setup (continue on error)
+          flutter doctor -v || true
 
       - name: Install Flutter dependencies
         run: |
-          export PATH="$PATH:$(pwd)/flutter/bin"
+          export FLUTTER_ROOT=$(pwd)/flutter
+          export PATH="$FLUTTER_ROOT/bin:$PATH"
+          
+          # Force pub get to use the correct version
+          cd $GITHUB_WORKSPACE
+          rm -f .dart_tool/version
           flutter pub get --no-example
         
       - name: Build Linux
         run: |
-          export PATH="$PATH:$(pwd)/flutter/bin"
+          export FLUTTER_ROOT=$(pwd)/flutter
+          export PATH="$FLUTTER_ROOT/bin:$PATH"
+          
+          cd $GITHUB_WORKSPACE
           flutter build linux --release
 
       - name: Package Application

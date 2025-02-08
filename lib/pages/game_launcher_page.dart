@@ -6,6 +6,7 @@ import 'package:wine_launcher/models/game.dart';
 import 'package:wine_launcher/models/wine_prefix.dart';
 import 'package:wine_launcher/dialogs/add_game_dialog.dart';
 import 'package:wine_launcher/services/logging_service.dart';
+import 'package:path/path.dart' as p;
 
 class GameLauncherPage extends StatefulWidget {
   const GameLauncherPage({super.key});
@@ -26,17 +27,37 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
   Future<void> _initializeData() async {
     if (!mounted) return;
     
-    // Load prefixes first
+    // Store context references before async operations
     final prefixProvider = Provider.of<PrefixProvider>(context, listen: false);
-    await prefixProvider.loadPrefixes(context);
-    
-    // Then load games
     final gameProvider = Provider.of<GameProvider>(context, listen: false);
-    await gameProvider.scanGamesFolder(context);
+    
+    try {
+      // Load prefixes first
+      await prefixProvider.loadPrefixes(context);
+      if (!mounted) return;
+      
+      // Then load games
+      await gameProvider.scanGamesFolder(context);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error loading data: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _showAddGameDialog() async {
+    if (!mounted) return;
+    
+    // Store context references
     final prefixProvider = context.read<PrefixProvider>();
+    final settings = context.read<SettingsProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    
     final prefixes = prefixProvider.prefixes;
 
     // Only show error if we really have no prefixes
@@ -45,9 +66,8 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
         'No prefixes available when trying to add game',
         level: LogLevel.warning,
       );
-      if (!mounted) return;
       
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: const Text('Please create a Wine prefix first in the Wine Setup tab'),
           backgroundColor: Colors.orange,
@@ -56,7 +76,7 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
             label: 'Go to Wine Setup',
             textColor: Colors.white,
             onPressed: () {
-              Navigator.pushNamed(context, '/wine_setup');
+              navigator.pushNamed('/wine_setup');
             },
           ),
         ),
@@ -65,8 +85,6 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
     }
 
     if (!mounted) return;
-
-    final settings = context.read<SettingsProvider>();
     final game = await showDialog<Game>(
       context: context,
       builder: (context) => Consumer<PrefixProvider>(
@@ -82,9 +100,20 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
     }
   }
 
+  // Add a method to get unique categories
+  Set<String> _getExistingCategories() {
+    final gameProvider = context.read<GameProvider>();
+    return gameProvider.games
+        .map((game) => game.category)
+        .where((category) => category.isNotEmpty)
+        .toSet();
+  }
+
+  // Update the dialog to show category suggestions
   Future<void> _editGame(Game game) async {
     final prefixProvider = context.read<PrefixProvider>();
     final settings = context.read<SettingsProvider>();
+    final categories = _getExistingCategories();
     
     // Make sure prefixes are loaded
     await prefixProvider.loadPrefixes(context);
@@ -93,12 +122,13 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
 
     final updatedGame = await showDialog<Game>(
       context: context,
-      barrierDismissible: false, // Prevent closing by clicking outside
+      barrierDismissible: false,
       builder: (context) => Consumer<PrefixProvider>(
         builder: (context, prefixProvider, _) => AddGameDialog(
           existingGame: game,
           availablePrefixes: prefixProvider.prefixes,
           gamesPath: settings.gamesPath,
+          existingCategories: categories,  // Pass categories to dialog
         ),
       ),
     );
@@ -289,6 +319,44 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
     }
   }
 
+  Future<void> _openGameFolder(Game game) async {
+    if (!mounted) return;
+    
+    final settings = context.read<SettingsProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    final gameDir = Directory(p.join(settings.gamesPath, game.name));
+    
+    try {
+      if (!await gameDir.exists()) {
+        await gameDir.create(recursive: true);
+      }
+
+      // Open folder in system file manager
+      final result = await Process.run('xdg-open', [gameDir.path]);
+      if (result.exitCode != 0) {
+        throw Exception('Failed to open folder: ${result.stderr}');
+      }
+      
+      LoggingService().log(
+        'Opened game folder: ${gameDir.path}',
+        level: LogLevel.info,
+      );
+    } catch (e) {
+      LoggingService().log(
+        'Error opening game folder: $e',
+        level: LogLevel.error,
+      );
+      
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Failed to open game folder: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer3<GameProvider, SettingsProvider, PrefixProvider>(
@@ -428,10 +496,15 @@ class _GameLauncherPageState extends State<GameLauncherPage> {
                                 style: TextStyle(color: Colors.orange),
                               ),
                         trailing: SizedBox(
-                          width: 200, // Fixed width for buttons
+                          width: 250, // Increased width for buttons
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
+                              IconButton(
+                                icon: const Icon(Icons.folder),
+                                onPressed: () => _openGameFolder(game),
+                                tooltip: 'Open Game Folder',
+                              ),
                               IconButton(
                                 icon: const Icon(Icons.edit),
                                 onPressed: () => _editGame(game),

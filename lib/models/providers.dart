@@ -428,7 +428,12 @@ class GameProvider extends ChangeNotifier {
         await dir.create(recursive: true);
       }
 
-      // Clear existing games
+      // Store existing games by ID to preserve their data
+      final existingGames = {
+        for (var game in _games)
+          game.id: game
+      };
+
       _games.clear();
 
       // Scan for game folders
@@ -438,9 +443,23 @@ class GameProvider extends ChangeNotifier {
           final configFile = File(p.join(entity.path, 'game.json'));
 
           if (await configFile.exists()) {
-            // Load existing game config
-            final json = jsonDecode(await configFile.readAsString());
-            _games.add(Game.fromJson(json));
+            try {
+              // Load existing game config
+              final json = jsonDecode(await configFile.readAsString());
+              final game = Game.fromJson(json);
+              
+              // Preserve existing game data if available
+              if (existingGames.containsKey(game.id)) {
+                _games.add(existingGames[game.id]!);
+              } else {
+                _games.add(game);
+              }
+            } catch (e) {
+              LoggingService().log(
+                'Error loading game config: $e',
+                level: LogLevel.error,
+              );
+            }
           } else {
             // Add new game entry
             _games.add(Game(
@@ -465,6 +484,26 @@ class GameProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> updateGame(Game game) async {
+    final index = _games.indexWhere((g) => g.id == game.id);
+    if (index != -1) {
+      _games[index] = game;
+      await saveGames();
+      
+      LoggingService().log(
+        'Updated game: ${game.name} (Category: ${game.category})',
+        level: LogLevel.info,
+      );
+      
+      notifyListeners();
+    } else {
+      LoggingService().log(
+        'Failed to update game: ${game.name} - Game not found',
+        level: LogLevel.error,
+      );
+    }
+  }
+
   Future<void> saveGames() async {
     try {
       final context = navigatorKey.currentContext;
@@ -479,6 +518,7 @@ class GameProvider extends ChangeNotifier {
       final settings = Provider.of<SettingsProvider>(context, listen: false);
       final gamesPath = settings.gamesPath;
 
+      // Save each game to its own directory
       for (final game in _games) {
         final gameDir = Directory(p.join(gamesPath, game.name));
         if (!await gameDir.exists()) {
@@ -490,6 +530,11 @@ class GameProvider extends ChangeNotifier {
           const JsonEncoder.withIndent('  ').convert(game.toJson()),
         );
       }
+
+      LoggingService().log(
+        'Saved ${_games.length} games to $gamesPath',
+        level: LogLevel.info,
+      );
     } catch (e) {
       LoggingService().log(
         'Error saving games: $e',
@@ -499,7 +544,16 @@ class GameProvider extends ChangeNotifier {
   }
 
   Future<void> addGame(Game game) async {
-    _games.add(game);
+    // Check if game with same ID already exists
+    final existingIndex = _games.indexWhere((g) => g.id == game.id);
+    if (existingIndex != -1) {
+      // Update existing game
+      _games[existingIndex] = game;
+    } else {
+      // Add new game
+      _games.add(game);
+    }
+    
     await saveGames();
     notifyListeners();
   }
@@ -508,15 +562,6 @@ class GameProvider extends ChangeNotifier {
     _games.removeWhere((g) => g.id == id);
     await saveGames();
     notifyListeners();
-  }
-
-  Future<void> updateGame(Game game) async {
-    final index = _games.indexWhere((g) => g.id == game.id);
-    if (index != -1) {
-      _games[index] = game;
-      await saveGames();
-      notifyListeners();
-    }
   }
 }
 

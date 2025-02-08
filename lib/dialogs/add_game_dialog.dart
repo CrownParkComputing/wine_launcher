@@ -3,17 +3,22 @@ import 'package:file_picker/file_picker.dart';
 import 'dart:io';
 import 'package:wine_launcher/models/game.dart';
 import 'package:wine_launcher/models/wine_prefix.dart';
+import 'package:provider/provider.dart';
+import 'package:wine_launcher/models/providers.dart';
+import 'package:path/path.dart' as p;
 
 class AddGameDialog extends StatefulWidget {
   final Game? existingGame;
   final List<WinePrefix> availablePrefixes;
   final String gamesPath;
+  final Set<String> existingCategories;
 
   const AddGameDialog({
     super.key,
     this.existingGame,
     required this.availablePrefixes,
     required this.gamesPath,
+    this.existingCategories = const {},
   });
 
   @override
@@ -66,14 +71,49 @@ class _AddGameDialogState extends State<AddGameDialog> {
   }
 
   Future<void> _selectExe() async {
+    // First ensure we have a valid game directory
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
+    final gameDir = Directory(p.join(settings.gamesPath, _nameController.text));
+    
+    if (_nameController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter a game name first'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Create game directory if it doesn't exist
+    if (!await gameDir.exists()) {
+      await gameDir.create(recursive: true);
+    }
+
+    // Open file picker in game directory
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['exe'],
+      initialDirectory: gameDir.path,
+      lockParentWindow: true,
     );
 
     if (result != null) {
+      final file = File(result.files.single.path!);
+      // Verify file is within game directory
+      if (!file.path.startsWith(gameDir.path)) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please select an executable within the game folder'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+      
       setState(() {
-        _exePathController.text = result.files.single.path!;
+        _exePathController.text = file.path;
       });
     }
   }
@@ -116,9 +156,26 @@ class _AddGameDialogState extends State<AddGameDialog> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _categoryController,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Category',
                   hintText: 'Enter game category',
+                  suffixIcon: PopupMenuButton<String>(
+                    icon: const Icon(Icons.arrow_drop_down),
+                    tooltip: 'Select existing category',
+                    onSelected: (String value) {
+                      setState(() {
+                        _categoryController.text = value;
+                      });
+                    },
+                    itemBuilder: (BuildContext context) {
+                      return widget.existingCategories.map((String category) {
+                        return PopupMenuItem<String>(
+                          value: category,
+                          child: Text(category),
+                        );
+                      }).toList();
+                    },
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -140,8 +197,9 @@ class _AddGameDialogState extends State<AddGameDialog> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.folder_open),
+                    icon: const Icon(Icons.file_open),
                     onPressed: _selectExe,
+                    tooltip: 'Select Executable',
                   ),
                 ],
               ),
