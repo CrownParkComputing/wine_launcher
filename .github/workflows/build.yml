@@ -31,17 +31,17 @@ jobs:
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
               curl git cmake ninja-build clang pkg-config libgtk-3-dev dpkg-dev \
-              xz-utils
+              xz-utils jq unzip zip
           elif [ "${{ matrix.distro }}" = "fedora:39" ]; then
             dnf clean all
             dnf makecache
             dnf install -y --setopt=install_weak_deps=False \
               curl git cmake ninja-build clang pkg-config gtk3-devel rpm-build \
-              findutils which xz
+              findutils which xz jq unzip zip
           else
             pacman -Syu --noconfirm
             pacman -S --noconfirm --needed \
-              curl git cmake ninja clang pkg-config gtk3 base-devel xz
+              curl git cmake ninja clang pkg-config gtk3 base-devel xz jq unzip zip
           fi
 
       - name: Setup Flutter
