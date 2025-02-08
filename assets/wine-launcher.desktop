@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Wine Launcher
+Comment=Game launcher for Wine and Proton
+Exec=wine-launcher
+Icon=wine-launcher
+Terminal=false
+Type=Application
+Categories=Game;Utility;
