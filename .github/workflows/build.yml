@@ -40,8 +40,8 @@ jobs:
           git config --global --add safe.directory '*'
           git config --global --add safe.directory $GITHUB_WORKSPACE
           
-          wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.16.9-stable.tar.xz
-          tar xf flutter_linux_3.16.9-stable.tar.xz
+          wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.13.9-stable.tar.xz
+          tar xf flutter_linux_3.13.9-stable.tar.xz
           
           export PATH="$PATH:$PWD/flutter/bin"
           flutter config --no-analytics
