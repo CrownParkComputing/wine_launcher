@@ -33,11 +33,19 @@ jobs:
               curl git cmake ninja-build clang pkg-config libgtk-3-dev dpkg-dev \
               xz-utils jq unzip zip
           elif [ "${{ matrix.distro }}" = "fedora:39" ]; then
+            # First install minimal required packages
             dnf clean all
             dnf makecache
             dnf install -y --setopt=install_weak_deps=False \
-              curl git cmake ninja-build clang pkg-config gtk3-devel rpm-build \
-              findutils which xz jq unzip zip
+              curl git jq unzip zip findutils which xz
+
+            # Then install development packages one by one to avoid dependency issues
+            dnf install -y --setopt=install_weak_deps=False cmake
+            dnf install -y --setopt=install_weak_deps=False ninja-build
+            dnf install -y --setopt=install_weak_deps=False clang
+            dnf install -y --setopt=install_weak_deps=False pkg-config
+            dnf install -y --setopt=install_weak_deps=False gtk3-devel
+            dnf install -y --setopt=install_weak_deps=False rpm-build
           else
             pacman -Syu --noconfirm
             pacman -S --noconfirm --needed \
