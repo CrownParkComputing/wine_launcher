@@ -3,46 +3,78 @@ import 'package:provider/provider.dart';
 import 'package:wine_launcher/models/providers.dart';
 import 'package:wine_launcher/models/prefix_url.dart';
 import 'package:file_picker/file_picker.dart';
+import '../models/settings_model.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
   @override
+  _SettingsPageState createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  final SettingsModel settings = SettingsModel();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGameFolders();
+  }
+
+  Future<void> _loadGameFolders() async {
+    final folders = await SettingsModel.loadGameFolders();
+    setState(() {
+      settings.gameSourceFolders = folders;
+    });
+  }
+
+  Future<void> _addGameFolder() async {
+    String? selectedDirectory = await FilePicker.platform.getDirectoryPath(
+      dialogTitle: 'Select Game Folder',
+    );
+
+    if (selectedDirectory != null) {
+      setState(() {
+        settings.addGameFolder(selectedDirectory);
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 3,
-      child: Scaffold(
-        appBar: AppBar(
-          toolbarHeight: 0,
-          bottom: const TabBar(
-            tabs: [
-              Tab(
-                icon: Icon(Icons.folder),
-                text: 'Paths',
-              ),
-              Tab(
-                icon: Icon(Icons.source),
-                text: 'Sources',
-              ),
-              Tab(
-                icon: Icon(Icons.settings),
-                text: 'Appearance',
-              ),
-            ],
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Settings'),
+      ),
+      body: Column(
+        children: [
+          ListTile(
+            title: Text('Game Source Folders'),
+            trailing: IconButton(
+              icon: Icon(Icons.add),
+              onPressed: _addGameFolder,
+            ),
           ),
-        ),
-        body: TabBarView(
-          children: [
-            // Paths Tab
-            _PathsTab(),
-            
-            // Sources Tab
-            _SourcesTab(),
-            
-            // Appearance Tab
-            _AppearanceTab(),
-          ],
-        ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: settings.gameSourceFolders.length,
+              itemBuilder: (context, index) {
+                final folder = settings.gameSourceFolders[index];
+                return ListTile(
+                  title: Text(folder),
+                  trailing: IconButton(
+                    icon: Icon(Icons.delete),
+                    onPressed: () {
+                      setState(() {
+                        settings.removeGameFolder(folder);
+                      });
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

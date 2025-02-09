@@ -26,24 +26,18 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  final List<Widget> _pages = const [
-    WelcomePage(),
-    GameLauncherPage(),
-    WineSetupPage(),
-    SettingsPage(),
-    LogsPage(),
-  ];
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
+    final List<Widget> pages = [
+      const WelcomePage(),
+      const GameLauncherPage(),
+      const WineSetupPage(),
+      const SettingsPage(),
+      const LogsPage(),
+    ];
+
     return Scaffold(
-      body: _pages[_selectedIndex],
+      body: pages[_selectedIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: _onItemTapped,
@@ -71,5 +65,11 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 } 
