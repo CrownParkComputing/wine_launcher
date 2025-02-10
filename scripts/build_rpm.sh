@@ -16,7 +16,7 @@ if ! command -v flutter &> /dev/null; then
 fi
 
 # Install build dependencies
-sudo dnf install -y cmake ninja-build gtk3-devel clang rpm-build
+sudo dnf install -y cmake ninja-build gtk3-devel clang rpm-build webkit2gtk4.0-devel
 
 # Pre-build Flutter files
 echo "Preparing Flutter build..."
@@ -63,7 +63,7 @@ rm -rf $TEMP_DIR
 cp packaging/wine-launcher.spec ~/rpmbuild/SPECS/
 
 # Build RPM with verbose output
-rpmbuild -vv -ba ~/rpmbuild/SPECS/wine-launcher.spec
+QA_RPATHS=$((0x0001|0x0002)) rpmbuild -vv -ba ~/rpmbuild/SPECS/wine-launcher.spec
 
 # List contents of the RPM before installing
 echo "Checking RPM contents..."

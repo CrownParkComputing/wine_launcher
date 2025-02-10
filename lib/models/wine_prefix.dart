@@ -2,17 +2,196 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:wine_launcher/services/logging_service.dart';
 import 'package:wine_launcher/models/prefix_settings.dart';
 import 'package:wine_launcher/services/dxvk_service.dart';
 import 'package:wine_launcher/services/vkd3d_service.dart';
 import 'package:wine_launcher/services/runtime_service.dart';
-import 'package:wine_launcher/services/download_service.dart';
-import 'package:provider/provider.dart';
-import 'package:wine_launcher/models/providers.dart';
+import 'package:wine_launcher/models/prefix_url.dart';
+import 'package:wine_launcher/main.dart';  // For navigatorKey
 
 class WinePrefix extends ChangeNotifier {
   static const protonBinaryNames = ['proton', 'proton.sh', 'proton-run'];
+
+  static Future<WinePrefix> create({
+    required String name,
+    required String basePath,
+    required PrefixUrl source,
+    required bool is64Bit,
+    required Function(double progress, String status) onProgress,
+  }) async {
+    final prefixType = source.isProton ? 'proton' : 'wine';
+    final fileName = source.url.split('/').last;
+    final downloadDir = Directory(p.join(basePath, 'downloads'));
+    final downloadPath = p.join(downloadDir.path, fileName);
+    final extractDir = p.join(basePath, prefixType, 'base');
+    final prefixPath = p.join(basePath, prefixType, name);
+
+    // Validate architecture for Proton
+    if (source.isProton && !is64Bit) {
+      throw Exception('Proton only supports 64-bit prefixes');
+    }
+
+    LoggingService().log(
+      'Starting prefix creation:\n'
+      'Type: $prefixType\n'
+      'Name: $name\n'
+      'URL: ${source.url}\n'
+      'Architecture: ${is64Bit ? "64-bit" : "32-bit"}\n'
+      'Download path: $downloadPath\n'
+      'Extract dir: $extractDir',
+      level: LogLevel.info,
+    );
+
+    // Create directories
+    await downloadDir.create(recursive: true);
+    await Directory(extractDir).create(recursive: true);
+
+    // Download and extract
+    await _downloadAndExtract(
+      source.url,
+      downloadPath,
+      extractDir,
+      onProgress,
+    );
+
+    try {
+      // Initialize prefix
+      await _initializePrefix(
+        prefixPath,
+        extractDir,
+        is64Bit,
+        source.isProton,
+      );
+    } catch (e) {
+      // Clean up on failure
+      if (await Directory(prefixPath).exists()) {
+        await Directory(prefixPath).delete(recursive: true);
+      }
+      rethrow;
+    }
+
+    return WinePrefix(
+      context: navigatorKey.currentContext!,
+      name: name,
+      path: prefixPath,
+      isProton: source.isProton,
+      sourceUrl: source.url,
+      is64Bit: is64Bit,
+      onStatusUpdate: (msg, {isError = false}) {
+        LoggingService().log(msg, level: isError ? LogLevel.error : LogLevel.info);
+      },
+    );
+  }
+
+  static Future<void> _downloadAndExtract(
+    String url,
+    String downloadPath,
+    String extractDir,
+    Function(double progress, String status) onProgress,
+  ) async {
+    // Download section
+    final response = await http.Client().send(
+      http.Request('GET', Uri.parse(url))..headers['Accept'] = '*/*',
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to download: HTTP ${response.statusCode}');
+    }
+
+    final contentLength = response.contentLength ?? 0;
+    if (contentLength == 0) {
+      throw Exception('Invalid content length from server');
+    }
+
+    final file = File(downloadPath);
+    final sink = file.openWrite();
+    int received = 0;
+
+    await for (final chunk in response.stream) {
+      sink.add(chunk);
+      received += chunk.length;
+      onProgress(
+        received / contentLength,
+        'Downloading: ${(received / 1024 / 1024).toStringAsFixed(2)}MB / ${(contentLength / 1024 / 1024).toStringAsFixed(2)}MB',
+      );
+    }
+
+    await sink.close();
+
+    // Extract
+    onProgress(0.8, 'Extracting files...');
+    final fileName = downloadPath.split('/').last;
+    final extractCommand = fileName.endsWith('.tar.gz') || fileName.endsWith('.tgz')
+        ? ['tar', '-xzf', downloadPath, '-C', extractDir]
+        : fileName.endsWith('.tar.xz')
+            ? ['tar', '-xJf', downloadPath, '-C', extractDir]
+            : fileName.endsWith('.zip')
+                ? ['unzip', downloadPath, '-d', extractDir]
+                : throw Exception('Unsupported archive format: $fileName');
+
+    final result = await Process.run(extractCommand[0], extractCommand.sublist(1));
+    if (result.exitCode != 0) {
+      throw Exception('Failed to extract archive: ${result.stderr}');
+    }
+
+    // Clean up
+    await file.delete();
+  }
+
+  static Future<void> _initializePrefix(
+    String prefixPath,
+    String extractDir,
+    bool is64Bit,
+    bool isProton,
+  ) async {
+    await Directory(prefixPath).create(recursive: true);
+
+    final env = {
+      'WINEPREFIX': prefixPath,
+      'WINEARCH': is64Bit ? 'win64' : 'win32',
+      'WINEDLLOVERRIDES': 'mscoree,mshtml=',
+      'PATH': '$extractDir/bin:${Platform.environment['PATH']}',
+    };
+
+    // First, ensure WINEPREFIX is empty or doesn't exist
+    if (await Directory(prefixPath).exists()) {
+      await Directory(prefixPath).delete(recursive: true);
+      await Directory(prefixPath).create(recursive: true);
+    }
+
+    // Initialize prefix with wineboot
+    LoggingService().log(
+      'Initializing prefix with WINEARCH=${env['WINEARCH']}',
+      level: LogLevel.info,
+    );
+
+    final result = await Process.run('wineboot', ['-u'], environment: env);
+    if (result.exitCode != 0) {
+      LoggingService().log(
+        'Failed to initialize prefix: ${result.stderr}',
+        level: LogLevel.error,
+      );
+      throw Exception('Failed to initialize prefix: ${result.stderr}');
+    }
+
+    // Verify architecture
+    final system32Dir = Directory('$prefixPath/drive_c/windows/system32');
+    final syswow64Dir = Directory('$prefixPath/drive_c/windows/syswow64');
+    
+    if (is64Bit && !await syswow64Dir.exists()) {
+      throw Exception('Failed to create 64-bit prefix: syswow64 directory missing');
+    }
+    
+    if (!is64Bit && await syswow64Dir.exists()) {
+      throw Exception('32-bit prefix contains syswow64 directory');
+    }
+    
+    if (!await system32Dir.exists()) {
+      throw Exception('Failed to create prefix: system32 directory missing');
+    }
+  }
 
   final BuildContext context;
   final String name;
@@ -55,6 +234,7 @@ class WinePrefix extends ChangeNotifier {
       prefixPath: path,
       is64Bit: is64Bit,
       onStatusUpdate: onStatusUpdate,
+      context: context,
     );
     _runtimeService = RuntimeService(
       context: context,
@@ -64,20 +244,56 @@ class WinePrefix extends ChangeNotifier {
     );
   }
 
-  Future<void> _loadSettings() async {
+  void _loadSettings() {
     final settingsFile = File('$path/prefix_settings.json');
-    if (await settingsFile.exists()) {
-      final jsonStr = await settingsFile.readAsString();
-      settings = PrefixSettings.fromJson(jsonDecode(jsonStr));
-    } else {
-      settings = PrefixSettings();
-      await _saveSettings();
+    try {
+      // Create directory if it doesn't exist
+      settingsFile.parent.createSync(recursive: true);
+
+      if (settingsFile.existsSync()) {
+        final jsonStr = settingsFile.readAsStringSync();
+        settings = PrefixSettings.fromJson(jsonDecode(jsonStr));
+      } else {
+        // Create default settings
+        settings = PrefixSettings(
+          name: name,
+          path: path,
+          isProton: isProton,
+          sourceUrl: sourceUrl,
+          is64Bit: is64Bit,
+        );
+        _saveSettings();
+      }
+    } catch (e) {
+      LoggingService().log(
+        'Error loading prefix settings: $e',
+        level: LogLevel.error,
+      );
+      // Create default settings even on error
+      settings = PrefixSettings(
+        name: name,
+        path: path,
+        isProton: isProton,
+        sourceUrl: sourceUrl,
+        is64Bit: is64Bit,
+      );
     }
   }
 
-  Future<void> _saveSettings() async {
+  void _saveSettings() {
     final settingsFile = File('$path/prefix_settings.json');
-    await settingsFile.writeAsString(jsonEncode(settings.toJson()));
+    try {
+      // Create directory if it doesn't exist
+      settingsFile.parent.createSync(recursive: true);
+
+      final jsonStr = const JsonEncoder.withIndent('  ').convert(settings.toJson());
+      settingsFile.writeAsStringSync(jsonStr);
+    } catch (e) {
+      LoggingService().log(
+        'Error saving prefix settings: $e',
+        level: LogLevel.error,
+      );
+    }
   }
 
   Future<void> runWinecfg() async {
@@ -299,49 +515,7 @@ class WinePrefix extends ChangeNotifier {
   Future<void> installDXVKAsync() => _dxvkService.installDXVKAsync();
   Future<void> uninstallDXVK() => _dxvkService.uninstallDXVK();
   Future<void> uninstallDXVKAsync() => _dxvkService.uninstallDXVKAsync();
-  Future<void> installVKD3D() async {
-    final settings = Provider.of<SettingsProvider>(context, listen: false);
-    final vkd3dUrl = settings.vkd3dUrl;
-
-    try {
-      onStatusUpdate('Downloading VKD3D...');
-      
-      final downloadDir = Directory(p.join(path, 'downloads'));
-      await downloadDir.create(recursive: true);
-      
-      final fileName = p.basename(vkd3dUrl);
-      final downloadPath = p.join(downloadDir.path, fileName);
-      
-      await DownloadService().downloadFile(vkd3dUrl, downloadPath);
-      
-      onStatusUpdate('Extracting VKD3D...');
-      
-      // Extract to a temporary directory
-      final tempDir = await Directory.systemTemp.createTemp('vkd3d_');
-      await Process.run('tar', ['-xf', downloadPath, '-C', tempDir.path]);
-      
-      // Copy DLLs to the prefix
-      final system32Dir = p.join(path, 'drive_c', 'windows', 'system32');
-      final syswow64Dir = p.join(path, 'drive_c', 'windows', 'syswow64');
-      
-      await _copyVKD3DDlls(tempDir.path, system32Dir, syswow64Dir);
-      
-      // Cleanup
-      await tempDir.delete(recursive: true);
-      await File(downloadPath).delete();
-      
-      // Update prefix settings
-      this.settings = this.settings.copyWith(vkd3dInstalled: true);
-      await _saveSettings();
-      notifyListeners();
-      
-      onStatusUpdate('VKD3D installed successfully');
-    } catch (e) {
-      onStatusUpdate('Failed to install VKD3D: $e', isError: true);
-      rethrow;
-    }
-  }
-
+  Future<void> installVKD3D() => _vkd3dService.install();
   Future<void> uninstallVKD3D() => _vkd3dService.uninstall();
   Future<void> installVisualCRuntime() => _runtimeService.installVisualCRuntime();
 
@@ -375,58 +549,97 @@ class WinePrefix extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _copyVKD3DDlls(String sourceDir, String system32Dir, String syswow64Dir) async {
+  String get bits => is64Bit ? '64-bit' : '32-bit';
+
+  Future<void> runRegedit() async {
+    await Process.run('wine', ['regedit'], 
+      environment: {
+        'WINEPREFIX': path,
+        if (isProton) ...{
+          'PROTON_NO_ESYNC': '1',
+          'PROTON_NO_FSYNC': '1',
+        },
+      }
+    );
+  }
+
+  bool hasAddon(String type) {
+    switch (type) {
+      case 'dxvk':
+        return File(p.join(path, 'drive_c/windows/system32/d3d11.dll')).existsSync();
+      case 'vkd3d':
+        return File(p.join(path, 'drive_c/windows/system32/d3d12.dll')).existsSync();
+      case 'runtime':
+        return File(p.join(path, 'drive_c/windows/system32/msvcp140.dll')).existsSync();
+      default:
+        return false;
+    }
+  }
+
+  Future<void> runJoyConfig() async {
+    await Process.run('wine', ['control', 'joy.cpl'], 
+      environment: {
+        'WINEPREFIX': path,
+        if (isProton) ...{
+          'PROTON_NO_ESYNC': '1',
+          'PROTON_NO_FSYNC': '1',
+        },
+      }
+    );
+  }
+
+  Future<void> setWineRegistryKey(String key, Map<String, String> values) async {
+    final regFile = File('$path/user.reg');
+    var content = await regFile.readAsString();
+    
+    // Create key if it doesn't exist
+    if (!content.contains('[$key]')) {
+      content += '\n\n[$key]';
+    }
+    
+    // Add or update values
+    for (final entry in values.entries) {
+      final pattern = RegExp('"${entry.key}"=".*"');
+      final newValue = '"${entry.key}"="${entry.value}"';
+      
+      if (content.contains(pattern)) {
+        content = content.replaceAll(pattern, newValue);
+      } else {
+        content += '\n$newValue';
+      }
+    }
+    
+    await regFile.writeAsString(content);
+    
+    // Reload registry
+    await Process.run('wineboot', ['-u'], 
+      environment: {
+        'WINEPREFIX': path,
+        if (isProton) ...{
+          'PROTON_NO_ESYNC': '1',
+          'PROTON_NO_FSYNC': '1',
+        },
+      },
+    );
+  }
+
+  Future<bool> checkVulkanSupport() async {
     try {
-      // Find all VKD3D DLLs in the source directory
-      final result = await Process.run('find', [
-        sourceDir,
-        '-name',
-        '*.dll',
-        '-type',
-        'f'
-      ]);
-
-      final dllPaths = result.stdout.toString().trim().split('\n')
-        .where((path) => path.isNotEmpty)
-        .toList();
-
-      LoggingService().log(
-        'Found VKD3D DLLs:\n${dllPaths.join('\n')}',
-        level: LogLevel.info,
-      );
-
-      // Copy 64-bit DLLs to system32
-      for (final dllPath in dllPaths.where((p) => p.contains('x64'))) {
-        final dllName = p.basename(dllPath);
-        final targetPath = p.join(system32Dir, dllName);
-        await File(dllPath).copy(targetPath);
+      final result = await Process.run('vulkaninfo', ['--summary']);
+      if (result.exitCode != 0) {
         LoggingService().log(
-          'Copied 64-bit DLL: $dllName',
-          level: LogLevel.info,
+          'Vulkan not properly configured: ${result.stderr}',
+          level: LogLevel.error,
         );
+        return false;
       }
-
-      // Copy 32-bit DLLs to syswow64
-      for (final dllPath in dllPaths.where((p) => p.contains('x86'))) {
-        final dllName = p.basename(dllPath);
-        final targetPath = p.join(syswow64Dir, dllName);
-        await File(dllPath).copy(targetPath);
-        LoggingService().log(
-          'Copied 32-bit DLL: $dllName',
-          level: LogLevel.info,
-        );
-      }
-
-      LoggingService().log(
-        'Successfully copied all VKD3D DLLs',
-        level: LogLevel.info,
-      );
+      return true;
     } catch (e) {
       LoggingService().log(
-        'Error copying VKD3D DLLs: $e',
+        'Error checking Vulkan support: $e',
         level: LogLevel.error,
       );
-      rethrow;
+      return false;
     }
   }
 } 

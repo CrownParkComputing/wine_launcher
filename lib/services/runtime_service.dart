@@ -11,10 +11,14 @@ class RuntimeService extends WineServiceBase {
 
   RuntimeService({
     required this.context,
-    required super.prefixPath,
-    required super.is64Bit,
-    required super.onStatusUpdate,
-  }) {
+    required String prefixPath,
+    required bool is64Bit,
+    required Function(String, {bool isError}) onStatusUpdate,
+  }) : super(
+    prefixPath: prefixPath,
+    is64Bit: is64Bit,
+    onStatusUpdate: onStatusUpdate,
+  ) {
     _vcRedistPath = context.read<SettingsProvider>().vcRedistPath;
   }
 

@@ -1,79 +1,52 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:wine_launcher/models/providers.dart';
-import 'package:wine_launcher/models/prefix_url.dart';
 import 'package:file_picker/file_picker.dart';
-import '../models/settings_model.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:wine_launcher/version.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
   @override
-  _SettingsPageState createState() => _SettingsPageState();
+  State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
-  final SettingsModel settings = SettingsModel();
+class _SettingsPageState extends State<SettingsPage> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _loadGameFolders();
+    _tabController = TabController(length: 2, vsync: this);
   }
 
-  Future<void> _loadGameFolders() async {
-    final folders = await SettingsModel.loadGameFolders();
-    setState(() {
-      settings.gameSourceFolders = folders;
-    });
-  }
-
-  Future<void> _addGameFolder() async {
-    String? selectedDirectory = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Select Game Folder',
-    );
-
-    if (selectedDirectory != null) {
-      setState(() {
-        settings.addGameFolder(selectedDirectory);
-      });
-    }
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Settings'),
+        title: const Text('Settings'),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Paths'),
+            Tab(text: 'Appearance'),
+          ],
+        ),
       ),
-      body: Column(
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          ListTile(
-            title: Text('Game Source Folders'),
-            trailing: IconButton(
-              icon: Icon(Icons.add),
-              onPressed: _addGameFolder,
-            ),
-          ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: settings.gameSourceFolders.length,
-              itemBuilder: (context, index) {
-                final folder = settings.gameSourceFolders[index];
-                return ListTile(
-                  title: Text(folder),
-                  trailing: IconButton(
-                    icon: Icon(Icons.delete),
-                    onPressed: () {
-                      setState(() {
-                        settings.removeGameFolder(folder);
-                      });
-                    },
-                  ),
-                );
-              },
-            ),
-          ),
+          _PathsTab(),
+          _AppearanceTab(),
         ],
       ),
     );
@@ -191,245 +164,82 @@ class _PathsTab extends StatelessWidget {
   }
 }
 
-class _SourcesTab extends StatefulWidget {
-  @override
-  State<_SourcesTab> createState() => _SourcesTabState();
-}
-
-class _SourcesTabState extends State<_SourcesTab> {
-  final _urlController = TextEditingController();
-  final _dxvkAsyncUrlController = TextEditingController();
-  final _vkd3dUrlController = TextEditingController();
-  bool _isProton = false;
-
-  @override
-  void dispose() {
-    _urlController.dispose();
-    _dxvkAsyncUrlController.dispose();
-    _vkd3dUrlController.dispose();
-    super.dispose();
-  }
-
-  void _showAddSourceDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Source'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _urlController,
-              decoration: const InputDecoration(
-                labelText: 'URL',
-                hintText: 'Enter Wine/Proton download URL',
-              ),
-            ),
-            const SizedBox(height: 16),
-            StatefulBuilder(
-              builder: (context, setState) => SwitchListTile(
-                title: const Text('Is Proton?'),
-                value: _isProton,
-                onChanged: (value) {
-                  setState(() {
-                    _isProton = value;
-                  });
-                },
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (_urlController.text.isNotEmpty) {
-                final settings = context.read<SettingsProvider>();
-                settings.addPrefixUrl(
-                  PrefixUrl(
-                    url: _urlController.text,
-                    isProton: _isProton,
-                    title: _urlController.text.split('/').last,
-                  ),
-                );
-                _urlController.clear();
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Add'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showEditDXVKDialog(BuildContext context) {
-    final settings = context.read<SettingsProvider>();
-    _dxvkAsyncUrlController.text = settings.dxvkAsyncUrl;
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit DXVK-Async Source'),
-        content: TextField(
-          controller: _dxvkAsyncUrlController,
-          decoration: const InputDecoration(
-            labelText: 'URL',
-            hintText: 'Enter DXVK-Async download URL',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (_dxvkAsyncUrlController.text.isNotEmpty) {
-                settings.dxvkAsyncUrl = _dxvkAsyncUrlController.text;
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showEditVKD3DDialog(BuildContext context) {
-    final settings = context.read<SettingsProvider>();
-    _vkd3dUrlController.text = settings.vkd3dUrl;
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit VKD3D Source'),
-        content: TextField(
-          controller: _vkd3dUrlController,
-          decoration: const InputDecoration(
-            labelText: 'URL',
-            hintText: 'Enter VKD3D download URL',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (_vkd3dUrlController.text.isNotEmpty) {
-                settings.vkd3dUrl = _vkd3dUrlController.text;
-                Navigator.pop(context);
-              }
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<SettingsProvider>(
-      builder: (context, settings, _) => ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Wine/Proton Sources',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.add),
-                        onPressed: () => _showAddSourceDialog(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ...settings.prefixUrls.asMap().entries.map(
-                    (entry) => ListTile(
-                      leading: Icon(
-                        entry.value.isProton 
-                          ? Icons.sports_esports 
-                          : Icons.wine_bar,
-                      ),
-                      title: Text(entry.value.url),
-                      subtitle: Text(entry.value.isProton ? 'Proton' : 'Wine'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () => settings.removePrefixUrl(entry.key),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'DXVK-Async Source',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  ListTile(
-                    title: Text(settings.dxvkAsyncUrl),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit),
-                      onPressed: () => _showEditDXVKDialog(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'VKD3D Source',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  ListTile(
-                    title: Text(settings.vkd3dUrl),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.edit),
-                      onPressed: () => _showEditVKD3DDialog(context),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _AppearanceTab extends StatelessWidget {
+  Future<void> _syncVersion(BuildContext context) async {
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Checking latest version...'),
+            ],
+          ),
+        ),
+      );
+
+      // Get latest version from GitHub releases
+      final response = await http.get(Uri.parse(
+        'https://api.github.com/repos/yourusername/wine-launcher/releases/latest'
+      ));
+
+      if (context.mounted) {
+        Navigator.pop(context); // Close progress dialog
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          final latestVersion = data['tag_name'].toString().replaceAll('v', '');
+          const currentVersion = appVersion;
+
+          if (latestVersion != currentVersion) {
+            showDialog(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Version Mismatch'),
+                content: Text(
+                  'Current version: $currentVersion\n'
+                  'Latest version: $latestVersion\n\n'
+                  'Would you like to update?'
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Later'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      launchUrl(Uri.parse(data['html_url']));
+                    },
+                    child: const Text('Update'),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('You are on the latest version')),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.pop(context); // Close progress dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error checking version: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ThemeProvider>(
@@ -456,8 +266,121 @@ class _AppearanceTab extends StatelessWidget {
               ),
             ),
           ),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Version',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  ListTile(
+                    title: const Text('Check for Updates'),
+                    subtitle: const Text('Current Version: 1.5'),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.sync),
+                      onPressed: () => _syncVersion(context),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _PrefixSelectionDialog extends StatefulWidget {
+  final List<String> prefixes;
+
+  const _PrefixSelectionDialog({required this.prefixes});
+
+  @override
+  State<_PrefixSelectionDialog> createState() => _PrefixSelectionDialogState();
+}
+
+class _PrefixSelectionDialogState extends State<_PrefixSelectionDialog> {
+  final Set<String> _selectedPrefixes = {};
+
+  String _getPrefixDisplayName(String path) {
+    // Extract game name from path
+    final parts = path.split('/');
+    if (parts.length >= 2 && parts.last == 'prefix') {
+      // Return the parent directory name (game name)
+      return parts[parts.length - 2];
+    }
+    return path.split('/').last;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Select Wine Prefixes'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Select prefixes to apply the controller fix:'),
+            const SizedBox(height: 8),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: widget.prefixes.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == 0) {
+                    return CheckboxListTile(
+                      title: const Text('Select All'),
+                      value: _selectedPrefixes.length == widget.prefixes.length,
+                      onChanged: (bool? value) {
+                        setState(() {
+                          if (value == true) {
+                            _selectedPrefixes.addAll(widget.prefixes);
+                          } else {
+                            _selectedPrefixes.clear();
+                          }
+                        });
+                      },
+                    );
+                  }
+                  final prefix = widget.prefixes[index - 1];
+                  return CheckboxListTile(
+                    title: Text(_getPrefixDisplayName(prefix)),
+                    subtitle: Text(prefix),
+                    value: _selectedPrefixes.contains(prefix),
+                    onChanged: (bool? value) {
+                      setState(() {
+                        if (value == true) {
+                          _selectedPrefixes.add(prefix);
+                        } else {
+                          _selectedPrefixes.remove(prefix);
+                        }
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _selectedPrefixes.isEmpty
+              ? null
+              : () => Navigator.pop(context, _selectedPrefixes),
+          child: const Text('Apply'),
+        ),
+      ],
     );
   }
 } 

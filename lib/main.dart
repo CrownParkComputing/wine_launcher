@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:wine_launcher/models/providers.dart';
 import 'package:wine_launcher/pages/home_page.dart';
 import 'package:wine_launcher/services/logging_service.dart';
-import 'package:wine_launcher/pages/settings_page.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 

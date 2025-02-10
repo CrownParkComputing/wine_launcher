@@ -16,6 +16,7 @@ BuildRequires:  cmake
 BuildRequires:  ninja-build
 BuildRequires:  gtk3-devel
 BuildRequires:  clang
+BuildRequires:  webkit2gtk4.0-devel
 
 # Disable debug package
 %define debug_package %{nil}
@@ -69,11 +70,12 @@ cat > %{buildroot}%{_datadir}/applications/%{name}.desktop << EOF
 [Desktop Entry]
 Name=Wine Launcher
 Comment=Wine and Proton prefix manager
-Exec=%{name}
+Exec=%{name} %U
 Icon=%{name}
 Terminal=false
 Type=Application
 Categories=Game;Utility;
+MimeType=x-scheme-handler/http;x-scheme-handler/https;
 EOF
 
 %files

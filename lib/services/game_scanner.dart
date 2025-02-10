@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import '../models/settings_model.dart';
+import 'package:wine_launcher/services/logging_service.dart';
 
 class GameScanner {
   static const _excludedFolders = ['wine_launcher', '.wine'];
@@ -23,7 +24,7 @@ class GameScanner {
           }
         }
       } catch (e) {
-        print('Error scanning directory $sourceFolder: $e');
+        LoggingService().log('Error scanning directory $sourceFolder: $e', level: LogLevel.error);
       }
     }
     

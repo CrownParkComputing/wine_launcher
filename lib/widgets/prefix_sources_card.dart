@@ -49,7 +49,7 @@ class PrefixSourcesCard extends StatelessWidget {
             ...prefixUrls.map((prefix) => Card(
               color: _getTypeColor(prefix.isProton),
               child: ListTile(
-                title: Text(prefix.title),
+                title: Text(prefix.name),
                 subtitle: Text(
                   prefix.isProton ? 'Proton' : 'Wine',
                   style: TextStyle(

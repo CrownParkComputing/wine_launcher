@@ -9,6 +9,7 @@ import 'package:wine_launcher/models/wine_prefix.dart';
 import 'package:wine_launcher/services/logging_service.dart';
 import 'package:wine_launcher/models/game.dart';
 import 'package:wine_launcher/main.dart';  // Add this import
+import 'package:wine_launcher/models/wine_addon.dart';
 
 class ThemeProvider with ChangeNotifier {
   static const appDirName = '.wine_launcher';
@@ -203,10 +204,16 @@ class SettingsProvider extends ChangeNotifier {
           return const PrefixUrl(
             url: '',
             isProton: false,
-            title: 'Invalid Entry',
+            name: 'Invalid Entry',
           );
         }
       }).where((prefix) => prefix.url.isNotEmpty).toList();
+
+      // Migrate addons with null safety
+      final addonsList = prefs.getStringList('addons');
+      _addons = addonsList
+          ?.map((a) => WineAddon.fromJson(jsonDecode(a) as Map<String, dynamic>))
+          .toList() ?? [];
 
       // Save migrated settings to file
       await _saveSettings();
@@ -239,6 +246,9 @@ class SettingsProvider extends ChangeNotifier {
         _dxvkAsyncUrl = json['dxvkAsyncUrl'] ?? defaultDxvkAsyncUrl;
         _vkd3dUrl = json['vkd3dUrl'] ?? defaultVkd3dUrl;
         _vcRedistPath = json['vcRedistPath'] ?? defaultVcRedistPath;
+        _addons = (json['addons'] as List?)
+            ?.map((a) => WineAddon.fromJson(a as Map<String, dynamic>))
+            .toList() ?? [];
         
         notifyListeners();
       } else {
@@ -263,6 +273,7 @@ class SettingsProvider extends ChangeNotifier {
         'dxvkAsyncUrl': _dxvkAsyncUrl,
         'vkd3dUrl': _vkd3dUrl,
         'vcRedistPath': _vcRedistPath,
+        'addons': _addons.map((a) => a.toJson()).toList(),
       };
 
       await _settingsFile.writeAsString(
@@ -278,31 +289,28 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   List<PrefixUrl> _loadPrefixUrls(List<dynamic> urlsJson) {
-    try {
-      return urlsJson.map((json) {
-        try {
-          return PrefixUrl.fromJson(json);
-        } catch (e) {
-          final logger = LoggingService();
-          logger.log(
-            'Error parsing prefix URL: $e\nJSON: $json',
-            level: LogLevel.error,
-          );
-          return const PrefixUrl(
-            url: '',
-            isProton: false,
-            title: 'Invalid Entry',
+    return urlsJson.map((json) {
+      try {
+        if (json is Map<String, dynamic>) {
+          return PrefixUrl(
+            url: json['url'] as String,
+            isProton: json['isProton'] as bool,
+            name: json['name'] as String,
           );
         }
-      }).where((prefix) => prefix.url.isNotEmpty).toList();
-    } catch (e) {
-      final logger = LoggingService();
-      logger.log(
-        'Error loading prefix URLs: $e',
-        level: LogLevel.error,
-      );
-      return const [];
-    }
+        return PrefixUrl.fromJson(json);
+      } catch (e) {
+        LoggingService().log(
+          'Error parsing prefix URL: $e\nJSON: $json',
+          level: LogLevel.error,
+        );
+        return const PrefixUrl(
+          url: '',
+          isProton: false,
+          name: 'Invalid Entry',
+        );
+      }
+    }).where((prefix) => prefix.url.isNotEmpty).toList();
   }
 
   String _defaultWinePrefixPath = '';
@@ -383,29 +391,67 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void addPrefixUrl(PrefixUrl prefixUrl) {
-    final urls = prefixUrls;
-    urls.add(prefixUrl);
-    _savePrefixUrls(urls);
+  void addPrefixUrl(String url, bool isProton) {
+    final prefixUrl = PrefixUrl(
+      url: url,
+      isProton: isProton,
+      name: isProton ? 'Proton' : 'Wine',
+    );
+    _prefixUrls.add(prefixUrl);
+    _savePrefixUrls();
     notifyListeners();
   }
 
   void removePrefixUrl(int index) {
-    final urls = prefixUrls;
-    if (index >= 0 && index < urls.length) {
-      urls.removeAt(index);
-      _savePrefixUrls(urls);
+    if (index >= 0 && index < _prefixUrls.length) {
+      _prefixUrls.removeAt(index);
+      _savePrefixUrls();
       notifyListeners();
     }
   }
 
-  void _savePrefixUrls(List<PrefixUrl> urls) {
-    _prefixUrls = urls;
+  void updatePrefixUrl(int index, String url, bool isProton) {
+    if (index >= 0 && index < _prefixUrls.length) {
+      _prefixUrls[index] = PrefixUrl(
+        url: url,
+        isProton: isProton,
+        name: isProton ? 'Proton' : 'Wine',
+      );
+      _saveSettings();
+      notifyListeners();
+    }
+  }
+
+  void _savePrefixUrls() {
     _saveSettings();
   }
 
   List<dynamic> _encodePrefixUrls(List<PrefixUrl> urls) {
     return urls.map((url) => url.toJson()).toList();
+  }
+
+  List<WineAddon> _addons = [];
+  List<WineAddon> get addons => List.unmodifiable(_addons);
+
+  void addAddon(WineAddon addon) {
+    _addons.add(addon);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void removeAddon(WineAddon addon) {
+    _addons.removeWhere((a) => a.url == addon.url);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void updateAddon(WineAddon oldAddon, WineAddon newAddon) {
+    final index = _addons.indexWhere((a) => a.url == oldAddon.url);
+    if (index != -1) {
+      _addons[index] = newAddon;
+      _saveSettings();
+      notifyListeners();
+    }
   }
 }
 
@@ -730,8 +776,8 @@ class PrefixProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void removePrefix(String path) {
-    _prefixes.removeWhere((p) => p.path == path);
+  void removePrefix(WinePrefix prefixToRemove) {
+    _prefixes.removeWhere((prefix) => prefix.path == prefixToRemove.path);
     notifyListeners();
   }
 } 
