@@ -80,4 +80,4 @@ class Game {
   String toString() {
     return 'Game(id: $id, name: $name, category: $category)';
   }
-} 
+}

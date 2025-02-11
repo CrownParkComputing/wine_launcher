@@ -588,6 +588,54 @@ class WinePrefix extends ChangeNotifier {
     );
   }
 
+  Future<void> applyControllerFix() async {
+    try {
+      LoggingService().log('Applying controller fix for prefix: $name', level: LogLevel.info);
+      
+      // Apply registry fixes
+      final result1 = await Process.run('wine', [
+        'reg',
+        'add',
+        'HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\winebus',
+        '/v',
+        'DisableHidraw',
+        '/t',
+        'REG_DWORD',
+        '/d',
+        '1'
+      ], environment: {
+        'WINEPREFIX': path
+      });
+
+      if (result1.exitCode != 0) {
+        throw Exception('Failed to apply first registry fix: ${result1.stderr}');
+      }
+
+      final result2 = await Process.run('wine', [
+        'reg',
+        'add',
+        'HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Services\\winebus',
+        '/v',
+        'Enable SDL',
+        '/t',
+        'REG_DWORD',
+        '/d',
+        '1'
+      ], environment: {
+        'WINEPREFIX': path
+      });
+
+      if (result2.exitCode != 0) {
+        throw Exception('Failed to apply second registry fix: ${result2.stderr}');
+      }
+
+      LoggingService().log('Successfully applied controller fix for prefix: $name', level: LogLevel.info);
+    } catch (e) {
+      LoggingService().log('Error applying controller fix: $e', level: LogLevel.error);
+      rethrow;
+    }
+  }
+
   Future<void> setWineRegistryKey(String key, Map<String, String> values) async {
     final regFile = File('$path/user.reg');
     var content = await regFile.readAsString();
@@ -642,4 +690,4 @@ class WinePrefix extends ChangeNotifier {
       return false;
     }
   }
-} 
+}

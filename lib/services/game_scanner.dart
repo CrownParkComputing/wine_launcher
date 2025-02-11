@@ -4,7 +4,7 @@ import '../models/settings_model.dart';
 import 'package:wine_launcher/services/logging_service.dart';
 
 class GameScanner {
-  static const _excludedFolders = ['wine_launcher', '.wine'];
+  static const _excludedFolders = ['wine_launcher', '.wine', 'wine-launcher', 'wine launcher'];
 
   static Future<List<String>> scanForGames() async {
     List<String> games = [];
@@ -17,8 +17,15 @@ class GameScanner {
           await for (final entity in directory.list()) {
             if (entity is Directory) {
               String folderName = path.basename(entity.path);
-              if (!_excludedFolders.contains(folderName)) {
-                games.add(entity.path);
+              String fullPath = entity.path;
+              
+              // Check for excluded patterns in both folder name and full path
+              bool shouldExclude = _excludedFolders.any((pattern) =>
+                  folderName.toLowerCase().contains(pattern.toLowerCase()) ||
+                  fullPath.toLowerCase().contains(pattern.toLowerCase()));
+                  
+              if (!shouldExclude) {
+                games.add(fullPath);
               }
             }
           }
@@ -28,6 +35,9 @@ class GameScanner {
       }
     }
     
+    // Debug log the found games
+    LoggingService().log('Found games: ${games.join(', ')}', level: LogLevel.debug);
+    
     return games;
   }
-} 
+}

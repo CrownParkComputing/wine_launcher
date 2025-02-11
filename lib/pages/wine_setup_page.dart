@@ -514,6 +514,10 @@ class _InstalledPrefixesTabState extends State<_InstalledPrefixesTab> with WineC
                       value: 'gamecontrollers',
                       child: Text('Game Controllers'),
                     ),
+                    const PopupMenuItem(
+                      value: 'controllerfix',
+                      child: Text('Apply Controller Fix'),
+                    ),
                   ],
                   onSelected: (value) async {
                     switch (value) {
@@ -528,6 +532,26 @@ class _InstalledPrefixesTabState extends State<_InstalledPrefixesTab> with WineC
                         break;
                       case 'gamecontrollers':
                         await prefix.runJoyConfig();
+                        break;
+                      case 'controllerfix':
+                        try {
+                          await prefix.applyControllerFix();
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Successfully applied controller fix'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to apply controller fix: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
                         break;
                     }
                   },
@@ -904,4 +928,4 @@ class _AddonsTab extends StatelessWidget {
           ],
     );
   }
-} 
+}

@@ -5,7 +5,7 @@ import 'package:wine_launcher/services/logging_service.dart';
 class WineService {
   static Future<String?> findWineBinary(String baseDir, bool isProton) async {
     final wineBinaryNames = isProton ? ['proton', 'wine64', 'wine'] : ['wine64', 'wine'];
-    
+
     LoggingService().log(
       'Searching for binaries in: $baseDir',
       level: LogLevel.info,
@@ -91,7 +91,7 @@ class WineService {
 
   static Future<bool> verifyPrefixStructure(String prefixPath) async {
     final requiredFiles = ['system.reg', 'user.reg', 'userdef.reg'];
-    
+
     try {
       for (final file in requiredFiles) {
         final filePath = p.join(prefixPath, file);
@@ -112,4 +112,9 @@ class WineService {
       return false;
     }
   }
-} 
+
+  void launchGame(String exePath) {
+    // Implementation for launching a game
+    Process.run('wine', [exePath]);
+  }
+}
