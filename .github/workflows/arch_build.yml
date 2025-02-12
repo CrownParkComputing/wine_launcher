@@ -96,7 +96,17 @@ jobs:
 
     - name: Build package
       run: |
-        makepkg -f
+        # Create build user
+        useradd -m builder
+        # Copy files to builder's home
+        cp PKGBUILD /home/builder/
+        cp -r build /home/builder/
+        chown -R builder:builder /home/builder
+        # Build package as builder
+        cd /home/builder
+        sudo -u builder makepkg -f
+        # Copy package back
+        cp *.pkg.tar.zst /github/workspace/
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
