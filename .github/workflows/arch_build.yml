@@ -81,12 +81,18 @@ jobs:
         arch=('x86_64')
         url="https://github.com/CrownParkComputing/wine_launcher"
         license=('MIT')
-        depends=('webkit2gtk' 'gtk3' 'file-roller')
-        makedepends=('git' 'cmake' 'ninja' 'pkgconf')
+        depends=('webkit2gtk' 'gtk3' 'file-roller' 'libsecret')
         options=('!strip')
 
+        prepare() {
+          true
+        }
+
         build() {
-          # Skip build as we already have the built files
+          true
+        }
+
+        check() {
           true
         }
 
@@ -99,6 +105,17 @@ jobs:
           echo '#!/bin/sh' > "\$pkgdir/usr/bin/\$pkgname"
           echo "exec /usr/lib/\$pkgname/wine_launcher \"\\\$@\"" >> "\$pkgdir/usr/bin/\$pkgname"
           chmod +x "\$pkgdir/usr/bin/\$pkgname"
+
+          # Create desktop entry
+          mkdir -p "\$pkgdir/usr/share/applications"
+          cat > "\$pkgdir/usr/share/applications/\$pkgname.desktop" << END
+          [Desktop Entry]
+          Type=Application
+          Name=Wine Launcher
+          Exec=wine-launcher
+          Icon=/usr/lib/wine-launcher/data/flutter_assets/assets/icon.png
+          Categories=Utility;
+          END
         }
         EOF
         cat PKGBUILD
