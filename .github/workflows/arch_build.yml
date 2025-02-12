@@ -71,10 +71,11 @@ jobs:
 
     - name: Create PKGBUILD
       run: |
-        cat > PKGBUILD << 'EOF'
+        echo "Creating PKGBUILD with version ${NEW_VERSION}"
+        cat > PKGBUILD << EOF
         # Maintainer: Your Name <your.email@example.com>
         pkgname=wine-launcher
-        pkgver=${NEW_VERSION#v}
+        pkgver=$(echo ${NEW_VERSION} | sed 's/^v//')
         pkgrel=1
         pkgdesc="Wine Launcher Application"
         arch=('x86_64')
@@ -84,15 +85,16 @@ jobs:
         makedepends=('git' 'cmake' 'ninja' 'pkgconf')
 
         package() {
-          mkdir -p "$pkgdir/usr/lib/$pkgname"
-          cp -r build/linux/x64/release/bundle/* "$pkgdir/usr/lib/$pkgname/"
+          mkdir -p "\$pkgdir/usr/lib/\$pkgname"
+          cp -r build/linux/x64/release/bundle/* "\$pkgdir/usr/lib/\$pkgname/"
           
-          mkdir -p "$pkgdir/usr/bin"
-          echo '#!/bin/sh' > "$pkgdir/usr/bin/$pkgname"
-          echo "exec /usr/lib/$pkgname/wine_launcher \"\$@\"" >> "$pkgdir/usr/bin/$pkgname"
-          chmod +x "$pkgdir/usr/bin/$pkgname"
+          mkdir -p "\$pkgdir/usr/bin"
+          echo '#!/bin/sh' > "\$pkgdir/usr/bin/\$pkgname"
+          echo "exec /usr/lib/\$pkgname/wine_launcher \"\\\$@\"" >> "\$pkgdir/usr/bin/\$pkgname"
+          chmod +x "\$pkgdir/usr/bin/\$pkgname"
         }
         EOF
+        cat PKGBUILD
 
     - name: Build package
       run: |
