@@ -96,15 +96,19 @@ jobs:
 
     - name: Build package
       run: |
-        # Create build user
-        useradd -m builder
+        # Create build user and add to wheel group
+        useradd -m -G wheel builder
+        # Configure sudo
+        echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+        # Install sudo if not already installed
+        pacman -S --noconfirm sudo
         # Copy files to builder's home
         cp PKGBUILD /home/builder/
         cp -r build /home/builder/
         chown -R builder:builder /home/builder
         # Build package as builder
         cd /home/builder
-        sudo -u builder makepkg -f
+        sudo -u builder bash -c 'makepkg -sf --noconfirm'
         # Copy package back
         cp *.pkg.tar.zst /github/workspace/
 
