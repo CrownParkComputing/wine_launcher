@@ -81,12 +81,19 @@ jobs:
         arch=('x86_64')
         url="https://github.com/CrownParkComputing/wine_launcher"
         license=('MIT')
-        depends=('flutter' 'webkit2gtk' 'gtk3' 'file-roller')
+        depends=('webkit2gtk' 'gtk3' 'file-roller')
         makedepends=('git' 'cmake' 'ninja' 'pkgconf')
+        options=('!strip')
+
+        build() {
+          # Skip build as we already have the built files
+          true
+        }
 
         package() {
+          # Copy pre-built files
           mkdir -p "\$pkgdir/usr/lib/\$pkgname"
-          cp -r build/linux/x64/release/bundle/* "\$pkgdir/usr/lib/\$pkgname/"
+          cp -r ../build/linux/x64/release/bundle/* "\$pkgdir/usr/lib/\$pkgname/"
           
           mkdir -p "\$pkgdir/usr/bin"
           echo '#!/bin/sh' > "\$pkgdir/usr/bin/\$pkgname"
