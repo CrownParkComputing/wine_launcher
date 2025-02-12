@@ -21,22 +21,20 @@ jobs:
     - name: Install dependencies
       run: |
         pacman -Syu --noconfirm
-        pacman -S --noconfirm git base-devel sudo
-        # Create build user
-        useradd -m builder
-        echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-        # Clone and build flutter
-        cd /home/builder
-        git clone https://aur.archlinux.org/flutter.git
-        chown -R builder:builder flutter
-        cd flutter
-        sudo -u builder makepkg -si --noconfirm
-        cd ..
-        # Install dart
-        pacman -S --noconfirm dart
+        pacman -S --noconfirm git base-devel sudo curl unzip xz
+        # Install Flutter directly
+        curl -O https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.19.3-stable.tar.xz
+        tar xf flutter_linux_3.19.3-stable.tar.xz -C /opt
+        ln -s /opt/flutter/bin/flutter /usr/local/bin/flutter
+        ln -s /opt/flutter/bin/dart /usr/local/bin/dart
+        # Set permissions
+        chmod -R a+rw /opt/flutter
+        # Install dependencies for Flutter
+        pacman -S --noconfirm clang cmake ninja gtk3 pkgconf
 
     - name: Setup Flutter
       run: |
+        export PATH="/opt/flutter/bin:$PATH"
         flutter config --no-analytics
         flutter doctor
         flutter config --enable-linux-desktop
