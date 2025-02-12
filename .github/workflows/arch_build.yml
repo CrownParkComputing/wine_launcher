@@ -1,58 +1,95 @@
-name: Arch Linux Build
+name: Build Arch Package
 
 on:
   push:
     branches: [ main ]
-    paths:
-      - 'arch/**'
-      - 'lib/**'
-      - 'pubspec.yaml'
   pull_request:
     branches: [ main ]
-    paths:
-      - 'arch/**'
-      - 'lib/**'
-      - 'pubspec.yaml'
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: archlinux:base-devel
+    container: 
+      image: archlinux:base-devel
 
     steps:
-    - uses: actions/checkout@v3
-    
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
     - name: Install dependencies
       run: |
         pacman -Syu --noconfirm
-        pacman -S --noconfirm git flutter wine winetricks
-        
+        pacman -S --noconfirm git flutter dart
+
     - name: Setup Flutter
       run: |
         flutter config --no-analytics
         flutter doctor
-        
-    - name: Get dependencies
-      run: flutter pub get
-        
-    - name: Build Linux release
-      run: flutter build linux --release
-        
-    - name: Build Arch package
-      working-directory: arch
+        flutter config --enable-linux-desktop
+
+    - name: Get latest version tag
+      id: get_version
       run: |
-        makepkg -s --noconfirm
-        
+        LATEST_TAG=$(git ls-remote --tags origin | sort -t '/' -k 3 -V | tail -n1 | awk -F/ '{print $3}' | sed 's/\^{}//g')
+        if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v0.0.0"
+        fi
+        echo "LATEST_TAG=$LATEST_TAG" >> $GITHUB_ENV
+        VERSION_PARTS=(${LATEST_TAG//[v.]/ })
+        NEW_VERSION="v${VERSION_PARTS[0]:-0}.${VERSION_PARTS[1]:-0}.$((${VERSION_PARTS[2]:-0} + 1))"
+        echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+
+    - name: Build project
+      run: |
+        flutter pub get
+        flutter build linux --release
+
+    - name: Create PKGBUILD
+      run: |
+        cat > PKGBUILD << 'EOF'
+        # Maintainer: Your Name <your.email@example.com>
+        pkgname=wine-launcher
+        pkgver=${NEW_VERSION#v}
+        pkgrel=1
+        pkgdesc="Wine Launcher Application"
+        arch=('x86_64')
+        url="https://github.com/CrownParkComputing/wine_launcher"
+        license=('MIT')
+        depends=('flutter')
+        makedepends=('git')
+
+        package() {
+          mkdir -p "$pkgdir/usr/lib/$pkgname"
+          cp -r build/linux/x64/release/bundle/* "$pkgdir/usr/lib/$pkgname/"
+          
+          mkdir -p "$pkgdir/usr/bin"
+          echo '#!/bin/sh' > "$pkgdir/usr/bin/$pkgname"
+          echo "exec /usr/lib/$pkgname/wine_launcher \"\$@\"" >> "$pkgdir/usr/bin/$pkgname"
+          chmod +x "$pkgdir/usr/bin/$pkgname"
+        }
+        EOF
+
+    - name: Build package
+      run: |
+        makepkg -f
+
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: wine-launcher-arch
-        path: arch/*.pkg.tar.zst
-        
+        path: ./*.pkg.tar.zst
+
     - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/')
+      id: create_release
       uses: softprops/action-gh-release@v1
       with:
-        files: arch/*.pkg.tar.zst
+        tag_name: ${{ env.NEW_VERSION }}
+        name: Release ${{ env.NEW_VERSION }}
+        draft: false
+        prerelease: false
+        files: |
+          *.pkg.tar.zst
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
