@@ -21,7 +21,14 @@ jobs:
     - name: Install dependencies
       run: |
         pacman -Syu --noconfirm
-        pacman -S --noconfirm git flutter dart
+        # Add Flutter repository
+        pacman -S --noconfirm git base-devel
+        git clone https://aur.archlinux.org/flutter.git
+        cd flutter
+        makepkg -si --noconfirm
+        cd ..
+        # Install dart
+        pacman -S --noconfirm dart
 
     - name: Setup Flutter
       run: |
