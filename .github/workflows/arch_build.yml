@@ -64,12 +64,9 @@ jobs:
         flutter pub get
         # Generate Linux build files
         flutter config --enable-linux-desktop
-        cd linux
-        mkdir -p build
-        cd build
-        cmake ..
-        cd ../..
-        # Build the project
+        # Generate Linux files first
+        flutter create --platforms=linux .
+        # Now build
         flutter build linux --release
 
     - name: Create PKGBUILD
@@ -83,8 +80,8 @@ jobs:
         arch=('x86_64')
         url="https://github.com/CrownParkComputing/wine_launcher"
         license=('MIT')
-        depends=('flutter')
-        makedepends=('git')
+        depends=('flutter' 'webkit2gtk' 'gtk3' 'file-roller')
+        makedepends=('git' 'cmake' 'ninja' 'pkgconf')
 
         package() {
           mkdir -p "$pkgdir/usr/lib/$pkgname"
