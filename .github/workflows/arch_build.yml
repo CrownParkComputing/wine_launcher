@@ -21,7 +21,9 @@ jobs:
     - name: Install dependencies
       run: |
         pacman -Syu --noconfirm
-        pacman -S --noconfirm git base-devel sudo curl unzip xz
+        pacman -S --noconfirm git base-devel sudo curl unzip xz \
+          clang cmake ninja gtk3 pkgconf webkit2gtk file-roller \
+          xdg-user-dirs gtk-update-icon-cache desktop-file-utils
         # Configure git
         git config --global user.email "jon@crownparkcomputing.com"
         git config --global user.name "Jon @ Crown Park Computing"
@@ -35,8 +37,6 @@ jobs:
         git config --global --add safe.directory '*'
         # Set permissions
         chmod -R a+rw /opt/flutter
-        # Install dependencies for Flutter
-        pacman -S --noconfirm clang cmake ninja gtk3 pkgconf
 
     - name: Setup Flutter
       run: |
@@ -60,7 +60,16 @@ jobs:
     - name: Build project
       run: |
         export PATH="/opt/flutter/bin:$PATH"
+        flutter clean
         flutter pub get
+        # Generate Linux build files
+        flutter config --enable-linux-desktop
+        cd linux
+        mkdir -p build
+        cd build
+        cmake ..
+        cd ../..
+        # Build the project
         flutter build linux --release
 
     - name: Create PKGBUILD
