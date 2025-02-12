@@ -37,6 +37,8 @@ class _WineSetupPageState extends State<WineSetupPage> with SingleTickerProvider
   }
 
   Future<void> _loadExistingPrefixes() async {
+    if (!mounted) return;
+    
     final settings = context.read<SettingsProvider>();
     final basePath = settings.defaultWinePrefixPath;
     if (basePath.isEmpty) {
@@ -45,7 +47,7 @@ class _WineSetupPageState extends State<WineSetupPage> with SingleTickerProvider
     }
 
     // Let PrefixProvider handle loading
-    Provider.of<PrefixProvider>(context, listen: false).loadPrefixes(context);
+    await context.read<PrefixProvider>().loadPrefixes(context);
   }
 
   Future<void> _selectAndRunExe(WinePrefix prefix) async {
@@ -59,6 +61,8 @@ class _WineSetupPageState extends State<WineSetupPage> with SingleTickerProvider
         allowedExtensions: ['exe'],
       );
 
+      if (!mounted) return;
+
       if (result != null) {
         final exePath = result.files.single.path!;
         await prefix.runExe(exePath);
@@ -69,38 +73,39 @@ class _WineSetupPageState extends State<WineSetupPage> with SingleTickerProvider
         );
       }
     } catch (e) {
-    if (!mounted) return;
-        messenger.showSnackBar(
+      if (!mounted) return;
+      messenger.showSnackBar(
         SnackBar(
           content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _installAddon(BuildContext context, WinePrefix prefix, String url) async {
-    if (!mounted) return;
+    if (!context.mounted) return;
     final messenger = ScaffoldMessenger.of(context);
-    final settings = context.read<SettingsProvider>();
+    final settings = Provider.of<SettingsProvider>(context, listen: false);
     
     try {
       final addon = settings.addons.firstWhere((a) => a.url == url);
       
       // Show confirmation dialog if already installed
+      if (!context.mounted) return;
       if (prefix.hasAddon(addon.type)) {
         final shouldUpdate = await showDialog<bool>(
           context: context,
-          builder: (context) => AlertDialog(
+          builder: (dialogContext) => AlertDialog(
             title: const Text('Addon Already Installed'),
             content: Text('${addon.name} is already installed. Would you like to update it?'),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: () => Navigator.pop(dialogContext, false),
                 child: const Text('Cancel'),
               ),
               TextButton(
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: () => Navigator.pop(dialogContext, true),
                 child: const Text('Update'),
               ),
             ],
@@ -109,6 +114,8 @@ class _WineSetupPageState extends State<WineSetupPage> with SingleTickerProvider
         
         if (shouldUpdate != true) return;
       }
+
+      if (!context.mounted) return;
       
       switch (addon.type) {
         case 'dxvk':
@@ -122,96 +129,91 @@ class _WineSetupPageState extends State<WineSetupPage> with SingleTickerProvider
           break;
       }
 
-      if (!mounted) return;
-        messenger.showSnackBar(
-          SnackBar(
+      if (!context.mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
           content: Text('Successfully ${prefix.hasAddon(addon.type) ? 'updated' : 'installed'} ${addon.name}'),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) {
-    if (!mounted) return;
+      if (!context.mounted) return;
       messenger.showSnackBar(
-          SnackBar(
+        SnackBar(
           content: Text('Error installing add-on: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  Future<void> _showAddAddonDialog(BuildContext context) async {
+  Future<void> _showAddAddonDialog(BuildContext parentContext) async {
     final nameController = TextEditingController();
     final urlController = TextEditingController();
     String selectedType = 'dxvk';
 
-    try {
-      final result = await showDialog<Map<String, String>>(
-      context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Add Wine Add-on'),
-          content: Column(
+    if (!parentContext.mounted) return;
+
+    final result = await showDialog<WineAddon>(
+      context: parentContext,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add New Add-on'),
+        content: StatefulBuilder(
+          builder: (context, setState) => Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Name',
-                  hintText: 'Enter add-on name',
-                ),
+                decoration: const InputDecoration(labelText: 'Add-on Name'),
               ),
               TextField(
                 controller: urlController,
-                decoration: const InputDecoration(
-                  labelText: 'URL',
-                  hintText: 'Enter download URL',
-                ),
+                decoration: const InputDecoration(labelText: 'Download URL'),
               ),
               DropdownButtonFormField<String>(
                 value: selectedType,
                 items: const [
                   DropdownMenuItem(value: 'dxvk', child: Text('DXVK')),
                   DropdownMenuItem(value: 'vkd3d', child: Text('VKD3D')),
-                  DropdownMenuItem(value: 'runtime', child: Text('Visual C++ Runtime')),
+                  DropdownMenuItem(value: 'runtime', child: Text('Runtime')),
                 ],
-                onChanged: (value) => selectedType = value!,
-                decoration: const InputDecoration(labelText: 'Type'),
+                onChanged: (value) {
+                  if (value != null) {
+                    setState(() => selectedType = value);
+                  }
+                },
               ),
             ],
           ),
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           TextButton(
-              onPressed: () {
-                if (nameController.text.isNotEmpty && urlController.text.isNotEmpty) {
-                  Navigator.pop(dialogContext, {
-                    'name': nameController.text,
-                    'url': urlController.text,
-                    'type': selectedType,
-                  });
-                }
-              },
-              child: const Text('Add'),
+            onPressed: () {
+              if (nameController.text.isNotEmpty && urlController.text.isNotEmpty) {
+                Navigator.pop(
+                  dialogContext,
+                  WineAddon(
+                    name: nameController.text,
+                    url: urlController.text,
+                    type: selectedType,
+                  ),
+                );
+              }
+            },
+            child: const Text('Add'),
           ),
         ],
       ),
     );
 
-      if (result != null && mounted) {
-        final settings = Provider.of<SettingsProvider>(context, listen: false);
-        final addon = WineAddon(
-          name: result['name']!,
-          url: result['url']!,
-          type: result['type']!,
-        );
-        settings.addAddon(addon);
-      }
-    } finally {
-      nameController.dispose();
-      urlController.dispose();
+    if (!parentContext.mounted) return;
+    if (result != null) {
+      final settings = Provider.of<SettingsProvider>(parentContext, listen: false);
+      settings.addAddon(result);
     }
   }
 

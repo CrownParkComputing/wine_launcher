@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:io' show Platform, Process;
+import 'dart:io' show Platform;
 import 'package:provider/provider.dart';
 import 'package:wine_launcher/models/providers.dart';
 import 'package:wine_launcher/pages/home_page.dart';
@@ -17,22 +17,6 @@ void main() async {
       level: LogLevel.error,
     );
     return;
-  }
-
-  // Run cleanup script to move wine_launcher folder if needed
-  try {
-    final result = await Process.run('bash', ['scripts/cleanup_games_folder.sh']);
-    if (result.exitCode != 0) {
-      LoggingService().log(
-        'Failed to run cleanup script: ${result.stderr}',
-        level: LogLevel.warning,
-      );
-    }
-  } catch (e) {
-    LoggingService().log(
-      'Error running cleanup script: $e',
-      level: LogLevel.warning,
-    );
   }
 
   runApp(

@@ -113,6 +113,46 @@ class WineService {
     }
   }
 
+  static Future<void> setRegistryValue(
+    String prefixPath,
+    String key,
+    String valueName,
+    String valueType,
+    String value,
+  ) async {
+    try {
+      final result = await Process.run('wine', [
+        'reg',
+        'add',
+        key,
+        '/v',
+        valueName,
+        '/t',
+        valueType,
+        '/d',
+        value,
+        '/f'
+      ], environment: {
+        'WINEPREFIX': prefixPath,
+      });
+
+      if (result.exitCode != 0) {
+        throw Exception('Failed to set registry value: ${result.stderr}');
+      }
+
+      LoggingService().log(
+        'Set registry value: $key\\$valueName = $value',
+        level: LogLevel.info,
+      );
+    } catch (e) {
+      LoggingService().log(
+        'Error setting registry value: $e',
+        level: LogLevel.error,
+      );
+      rethrow;
+    }
+  }
+
   void launchGame(String exePath) {
     // Implementation for launching a game
     Process.run('wine', [exePath]);

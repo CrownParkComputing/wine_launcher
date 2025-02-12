@@ -412,7 +412,7 @@ class WinePrefix extends ChangeNotifier {
         // Minimal Wine environment
         final env = {
           'WINEPREFIX': path,
-          'WINEARCH': is64Bit ? 'win64' : 'win32',
+          'WINEARCH': settings.is64Bit ? 'win64' : 'win32',
           'WINEDEBUG': '-all',  // Disable debug output
           'PATH': Platform.environment['PATH'] ?? '',
         };

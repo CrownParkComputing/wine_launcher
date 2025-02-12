@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as p;
 import 'package:wine_launcher/models/game.dart';
-import 'package:wine_launcher/models/wine_prefix.dart';
 import 'package:wine_launcher/services/prefix_service.dart';
 
 class GameService {

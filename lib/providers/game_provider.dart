@@ -4,7 +4,7 @@ import '../models/game.dart';
 import '../services/logging_service.dart';
 
 class GameProvider with ChangeNotifier {
-  List<Game> _games = [];
+  final List<Game> _games = [];
 
   List<Game> get games => _games;
 

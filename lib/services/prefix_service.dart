@@ -19,7 +19,7 @@ class PrefixService {
     // Implementation for creating a prefix
     onStatusUpdate('Creating prefix...');
     // Simulate network request
-    await Future.delayed(Duration(seconds: 2));
+    await Future.delayed(const Duration(seconds: 2));
     onStatusUpdate('Prefix created successfully.');
   }
 
@@ -30,7 +30,7 @@ class PrefixService {
   }) async {
     // Implementation for updating a prefix
     // Simulate network request
-    await Future.delayed(Duration(seconds: 2));
+    await Future.delayed(const Duration(seconds: 2));
   }
 
   Future<void> deletePrefix({
@@ -39,6 +39,6 @@ class PrefixService {
   }) async {
     // Implementation for deleting a prefix
     // Simulate network request
-    await Future.delayed(Duration(seconds: 2));
+    await Future.delayed(const Duration(seconds: 2));
   }
 }
