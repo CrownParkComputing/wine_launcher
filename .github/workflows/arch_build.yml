@@ -1,0 +1,58 @@
+name: Arch Linux Build
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'arch/**'
+      - 'lib/**'
+      - 'pubspec.yaml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'arch/**'
+      - 'lib/**'
+      - 'pubspec.yaml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install dependencies
+      run: |
+        pacman -Syu --noconfirm
+        pacman -S --noconfirm git flutter wine winetricks
+        
+    - name: Setup Flutter
+      run: |
+        flutter config --no-analytics
+        flutter doctor
+        
+    - name: Get dependencies
+      run: flutter pub get
+        
+    - name: Build Linux release
+      run: flutter build linux --release
+        
+    - name: Build Arch package
+      working-directory: arch
+      run: |
+        makepkg -s --noconfirm
+        
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: wine-launcher-arch
+        path: arch/*.pkg.tar.zst
+        
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: arch/*.pkg.tar.zst
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
