@@ -30,6 +30,8 @@ jobs:
         # Fix git ownership issue
         git config --global --add safe.directory /opt/flutter
         git config --global --add safe.directory '*'
+        # Configure git pull strategy
+        git config --global pull.rebase false
         # Set permissions
         chmod -R a+rw /opt/flutter
         # Install dependencies for Flutter
@@ -42,7 +44,7 @@ jobs:
         # Initialize Flutter
         cd /opt/flutter
         git checkout stable
-        git pull
+        git pull origin stable --no-rebase
         flutter precache
         cd -
         flutter doctor
