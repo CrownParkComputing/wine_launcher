@@ -26,15 +26,13 @@ jobs:
         git config --global user.email "jon@crownparkcomputing.com"
         git config --global user.name "Jon @ Crown Park Computing"
         # Install Flutter directly
-        curl -O https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.19.3-stable.tar.xz
-        tar xf flutter_linux_3.19.3-stable.tar.xz -C /opt
+        curl -O https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_3.27.4-stable.tar.xz
+        tar xf flutter_linux_3.27.4-stable.tar.xz -C /opt
         ln -s /opt/flutter/bin/flutter /usr/local/bin/flutter
         ln -s /opt/flutter/bin/dart /usr/local/bin/dart
         # Fix git ownership issue
         git config --global --add safe.directory /opt/flutter
         git config --global --add safe.directory '*'
-        # Configure git pull strategy
-        git config --global pull.rebase false
         # Set permissions
         chmod -R a+rw /opt/flutter
         # Install dependencies for Flutter
@@ -44,12 +42,6 @@ jobs:
       run: |
         export PATH="/opt/flutter/bin:$PATH"
         flutter config --no-analytics
-        # Initialize Flutter
-        cd /opt/flutter
-        git checkout stable
-        git pull origin stable --no-rebase
-        flutter precache
-        cd -
         flutter doctor
         flutter config --enable-linux-desktop
 
