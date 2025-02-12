@@ -21,11 +21,16 @@ jobs:
     - name: Install dependencies
       run: |
         pacman -Syu --noconfirm
-        # Add Flutter repository
-        pacman -S --noconfirm git base-devel
+        pacman -S --noconfirm git base-devel sudo
+        # Create build user
+        useradd -m builder
+        echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+        # Clone and build flutter
+        cd /home/builder
         git clone https://aur.archlinux.org/flutter.git
+        chown -R builder:builder flutter
         cd flutter
-        makepkg -si --noconfirm
+        sudo -u builder makepkg -si --noconfirm
         cd ..
         # Install dart
         pacman -S --noconfirm dart
